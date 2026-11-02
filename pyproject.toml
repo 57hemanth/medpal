@@ -1,0 +1,75 @@
+[project]
+name = "medpal"
+version = "0.1.0"
+description = "MedPal: triage + booking, records Q&A and consultation scribe on LangGraph"
+readme = "README.md"
+requires-python = ">=3.12,<3.13"
+dependencies = [
+    "alembic>=1.20.1",
+    "arq>=0.28.0",
+    "fastapi>=0.162.0",
+    "httpx>=0.28.1",
+    "langgraph>=1.2.19",
+    "langgraph-checkpoint-postgres>=3.2.0",
+    "pgvector>=0.5.1",
+    "psycopg[binary,pool]>=3.3.6",
+    "pydantic>=2",
+    "pydantic-settings>=2.16.2",
+    "redis>=5.3.1",
+    "sqlalchemy>=2",
+    "tenacity>=9.2.1",
+    "uvicorn[standard]>=0.54.0",
+]
+
+[tool.uv]
+package = false
+
+[tool.ruff]
+line-length = 110
+target-version = "py312"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "B", "UP", "ASYNC", "S", "SIM"]
+ignore = ["S101"]  # asserts are fine in tests
+
+[tool.ruff.lint.per-file-ignores]
+"tests/**" = ["S"]
+"infra/migrations/**" = ["E501"]
+
+[tool.mypy]
+python_version = "3.12"
+ignore_missing_imports = true
+check_untyped_defs = true
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+asyncio_default_fixture_loop_scope = "function"
+testpaths = ["tests"]
+markers = [
+  "integration: needs the docker-compose stack (Postgres, Redis); skipped when unavailable",
+]
+
+# Module boundaries (ADR-0003): only services.platform.egress may talk to vendors,
+# and workflow modules don't reach into each other.
+[tool.importlinter]
+root_packages = ["services"]
+
+[[tool.importlinter.contracts]]
+name = "Workflow modules are independent"
+type = "independence"
+modules = ["services.scheduling", "services.records", "services.scribe"]
+
+[[tool.importlinter.contracts]]
+name = "Platform does not depend on workflows or the agent"
+type = "forbidden"
+source_modules = ["services.platform"]
+forbidden_modules = ["services.agent", "services.api", "services.scheduling", "services.records", "services.scribe"]
+
+[dependency-groups]
+dev = [
+    "import-linter>=2.15",
+    "mypy>=2.4.1",
+    "pytest>=9.2.0",
+    "pytest-asyncio>=1.4.1.post1",
+    "ruff>=0.17.3",
+]
