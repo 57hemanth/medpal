@@ -1,0 +1,22 @@
+# Common Indian given names and surnames, used as a case-insensitive safety net for the PERSON
+# recogniser on lowercase / Hinglish text, where spaCy's English NER misses names (pre-mortem F9).
+# Public, generic name lists (not records of real people). Extend from the generated layer (T2.6).
+# Words that are also common Hindi/English words (e.g. asha, kiran, pooja, raja) are deliberately
+# kept: over-scrubbing a word costs little on egress; leaking a name is a DPDP breach.
+# Excluded on purpose: "das" (Hindi "ten", as in "das din se bukhar"), since it carries clinical duration.
+[given]
+aarav aditi aditya ahmed ajay akash akshay alok amit amol amrita anand anil anita anjali ankit anu anupam
+arjun arun aruna asha ashish ashok ayesha deepa deepak dev devendra dinesh divya farah fatima ganesh gaurav
+geeta girish gopal govind gurpreet hari harish harpreet hemant imran indira irfan jaya jayant jyoti kabir
+kamal kanika karan kavita kavya kiran krishna kumar lakshmi lalita madhav madhu mahesh manish manoj meena
+meera mohammed mohan mukesh nandini naveen neha nikhil nisha nitin padma pallavi pankaj parvati pooja
+pradeep prakash pranav prasad praveen preeti priya puja rahul raj raja rajesh rajiv rakesh ramesh rani ravi
+rekha rohan rohit sachin sadia sameer sandeep sanjay santosh sarita satish seema shabnam shalini shankar
+shanti shilpa shiv shreya shweta siddharth smita sneha sonia srinivas subhash sudha sumit sunil sunita
+suresh sushma swati tanvi tarun uma usha varun vasudha venkatesh vidya vijay vikas vikram vinod vishal
+yash yogesh zainab zoya
+[surname]
+agarwal ahmed ali bansal banerjee bhat bhatt chatterjee chaudhary chowdary desai deshmukh deshpande dubey
+gandhi ghosh gowda gupta iyer iyengar jain joshi kapoor khan kulkarni kumar malhotra mehta menon mishra
+mukherjee murthy naidu nair narayanan pandey patel patil pillai prasad qureshi rahman rao reddy saxena
+shah sharma sheikh shetty singh sinha srivastava subramaniam thakur tiwari trivedi varma verma yadav

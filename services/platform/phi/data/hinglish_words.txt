@@ -1,0 +1,8 @@
+# Romanised-Hindi function words and common symptom/kinship words, used to detect Hinglish text.
+# Why: spaCy's English NER labels runs of these as PERSON ("mein dard hai", "bukhar hai"), which would
+# erase clinical content; in Hinglish mode the NER recogniser is switched off (verified 2026-11-02).
+# Ambiguous English words (me, the, sir, ya) are left out on purpose. Extend with Marathi/Telugu later.
+hai hain ho hoon tha thi mein ko se ki ka ke aur nahi nahin mujhe mera meri mere hum humko unko
+uska uski uske kya kab kaise din raat subah shaam bahut thoda abhi kal aaj saath wala wali raha rahi
+rahe gaya gayi dard bukhar khansi pet seene saans maa papa dadi dada nani nana bhai behen beta beti
+naam ulti chakkar kamzori takleef
