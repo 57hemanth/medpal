@@ -24,10 +24,20 @@ class Settings(BaseSettings):
     # It is refused outside dev/test by the validator below.
     auth_mode: Literal["dev", "oidc"] = "dev"
 
+    # Hosted generation goes through services.platform.egress, which de-identifies first.
+    # `fake` is deterministic and exists for local tests only; production must pick a provider.
+    chat_provider: Literal["fake", "gemini", "openai", "anthropic", "openai-compatible"] = "fake"
+    chat_model: str = "medpal-fake"
+    chat_api_key: str | None = None
+    chat_base_url: str | None = None
+    chat_temperature: float = 0.0
+
     @model_validator(mode="after")
     def _no_dev_auth_in_prod(self) -> "Settings":
         if self.env == "prod" and self.auth_mode == "dev":
             raise ValueError("auth_mode=dev is not allowed when env=prod")
+        if self.env == "prod" and self.chat_provider == "fake":
+            raise ValueError("chat_provider=fake is not allowed when env=prod")
         return self
 
     @property
