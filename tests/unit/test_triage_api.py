@@ -4,9 +4,9 @@ import httpx
 import pytest
 from langgraph.checkpoint.memory import InMemorySaver
 
-from services.agent.w1_triage.graph import build_w1
+from services.agent.triage.graph import build_triage_graph
 from services.api.main import create_app
-from tests.unit.test_w1_graph import FakeDeps, cand
+from tests.unit.test_triage_graph import FakeTriageTools, cand
 
 PRIYA = {"X-Dev-User-Id": "u-priya", "X-Dev-Role": "patient", "X-Dev-Patient-Id": "p-priya"}
 RAVI = {"X-Dev-User-Id": "u-ravi", "X-Dev-Role": "patient", "X-Dev-Patient-Id": "p-ravi"}
@@ -14,8 +14,10 @@ RAVI = {"X-Dev-User-Id": "u-ravi", "X-Dev-Role": "patient", "X-Dev-Patient-Id": 
 
 @pytest.fixture
 async def client():
-    graph = build_w1(FakeDeps([cand("s1", "d1"), cand("s2", "d2")])).compile(checkpointer=InMemorySaver())
-    app = create_app(w1_graph=graph)
+    graph = build_triage_graph(FakeTriageTools([cand("s1", "d1"), cand("s2", "d2")])).compile(
+        checkpointer=InMemorySaver()
+    )
+    app = create_app(triage_graph=graph)
     async with app.router.lifespan_context(app):
         transport = httpx.ASGITransport(app=app)
         async with httpx.AsyncClient(transport=transport, base_url="http://test") as c:

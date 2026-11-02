@@ -14,7 +14,7 @@ class CandidateView(TypedDict):
     starts_at: str  # ISO 8601; state must stay JSON-serialisable for the checkpointer
 
 
-class W1State(TypedDict, total=False):
+class TriageState(TypedDict, total=False):
     # Injected by the API at run start; no node writes it.
     auth: AuthContext
     intake_text: str

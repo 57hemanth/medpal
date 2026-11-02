@@ -1,4 +1,4 @@
-"""Postgres-backed implementation of the W1 tools (W1Deps)."""
+"""Postgres-backed implementation of the triage tools (TriageTools)."""
 
 from psycopg_pool import AsyncConnectionPool
 
@@ -8,7 +8,7 @@ from services.scheduling import service as scheduling
 from .state import CandidateView
 
 
-class PgW1Deps:
+class PgTriageTools:
     def __init__(self, pool: AsyncConnectionPool) -> None:
         self._pool = pool
 

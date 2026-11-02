@@ -1,4 +1,4 @@
-"""Slice 0 end to end on real Postgres: API → W1 graph → interrupt → resume → appointment + audit.
+"""Triage end to end on real Postgres: API → triage graph → interrupt → resume → appointment + audit.
 Also proves the API is stateless: a run paused by one app instance is resumed by another."""
 
 import uuid

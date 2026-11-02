@@ -1,4 +1,6 @@
-"""W1 endpoints. The API is stateless: run state lives in the checkpointer, keyed by thread id."""
+"""Triage and booking endpoints.
+
+The API is stateless: run state lives in the checkpointer, keyed by thread id."""
 
 import uuid
 from typing import Annotated, Any, Literal
@@ -10,7 +12,7 @@ from pydantic import BaseModel, Field
 from services.api.deps import auth_ctx
 from services.platform.auth import AuthContext
 
-router = APIRouter(prefix="/triage", tags=["W1 find my doctor"])
+router = APIRouter(prefix="/triage", tags=["triage"])
 
 Auth = Annotated[AuthContext, Depends(auth_ctx)]
 
@@ -60,15 +62,19 @@ def _config(thread_id: str) -> dict[str, Any]:
 async def start_triage(body: TriageIn, request: Request, auth: Auth) -> TriageOut:
     if auth["role"] != "patient":
         # Caregiver and desk booking-on-behalf need the consent service (plan T3.3).
-        raise HTTPException(status.HTTP_403_FORBIDDEN, "only patients can start triage in this slice")
+        raise HTTPException(
+            status.HTTP_403_FORBIDDEN, "booking on behalf of another patient is not available yet"
+        )
     thread_id = str(uuid.uuid4())
-    out = await request.app.state.w1.ainvoke({"auth": auth, "intake_text": body.text}, _config(thread_id))
+    out = await request.app.state.triage_graph.ainvoke(
+        {"auth": auth, "intake_text": body.text}, _config(thread_id)
+    )
     return _to_out(thread_id, out)
 
 
 @router.post("/{thread_id}/resume", response_model=TriageOut)
 async def resume_triage(thread_id: str, body: ResumeIn, request: Request, auth: Auth) -> TriageOut:
-    graph = request.app.state.w1
+    graph = request.app.state.triage_graph
     snapshot = await graph.aget_state(_config(thread_id))
     owner = (snapshot.values or {}).get("auth", {}).get("user_id")
     if owner is None:

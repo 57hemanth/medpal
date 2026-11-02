@@ -1,4 +1,4 @@
-"""W1 Find my doctor: slice-0 graph.
+"""Triage and booking graph ("find my doctor").
 
     intake → red_flag_rules ─flag─► emergency_handoff ─► END
                  │ clear
@@ -24,7 +24,7 @@ from langgraph.types import interrupt
 
 from services.platform.auth import AuthContext
 
-from .state import CandidateView, W1State
+from .state import CandidateView, TriageState
 
 MAX_REOFFERS = 3
 
@@ -38,8 +38,8 @@ FRONT_DESK_REPLY = (
 )
 
 # ---- STUB (plan T3.7): replaced by the versioned, CMO-signed YAML rule engine. -------------
-# Deliberately over-inclusive and NOT clinically validated. It exists so slice 0 already
-# exercises the emergency path end to end.
+# Deliberately over-inclusive and NOT clinically validated. It exists so the emergency path
+# is exercised end to end before the real rule engine lands.
 _STUB_RED_FLAG_PHRASES = {
     "chest pain": "stub_chest_pain",
     "chest tightness": "stub_chest_pain",
@@ -54,8 +54,8 @@ _STUB_RED_FLAG_PHRASES = {
 }
 
 
-class W1Deps(Protocol):
-    """Tools the graph may use. Implemented over Postgres in deps.py; faked in unit tests."""
+class TriageTools(Protocol):
+    """Tools the graph may use. Implemented over Postgres in tools.py; faked in unit tests."""
 
     def shortlist(self, specialty: str, exclude_slot_ids: list[str]) -> Awaitable[list[CandidateView]]: ...
 
@@ -72,8 +72,8 @@ def _thread_id(config: RunnableConfig) -> str:
     return str(config["configurable"]["thread_id"])
 
 
-def build_w1(deps: W1Deps) -> StateGraph:
-    async def intake(state: W1State) -> W1State:
+def build_triage_graph(tools: TriageTools) -> StateGraph:
+    async def intake(state: TriageState) -> TriageState:
         return {
             "intake_text": state["intake_text"].strip(),
             "red_flags": [],
@@ -81,14 +81,14 @@ def build_w1(deps: W1Deps) -> StateGraph:
             "reoffer_count": 0,
         }
 
-    async def red_flag_rules(state: W1State) -> W1State:
+    async def red_flag_rules(state: TriageState) -> TriageState:
         text = state["intake_text"].lower()
         flags = sorted({rule for phrase, rule in _STUB_RED_FLAG_PHRASES.items() if phrase in text})
         return {"red_flags": flags}
 
-    async def emergency_handoff(state: W1State, config: RunnableConfig) -> W1State:
+    async def emergency_handoff(state: TriageState, config: RunnableConfig) -> TriageState:
         auth = state["auth"]
-        ticket = await deps.open_handoff(
+        ticket = await tools.open_handoff(
             auth,
             kind="emergency",
             patient_id=auth["acting_for_patient_id"],
@@ -97,16 +97,16 @@ def build_w1(deps: W1Deps) -> StateGraph:
         )
         return {"handoff_ticket_id": ticket, "outcome": "emergency", "reply": EMERGENCY_REPLY}
 
-    async def match_specialty(state: W1State) -> W1State:
+    async def match_specialty(state: TriageState) -> TriageState:
         # STUB (plan T4.2): small-model classifier over the 38-specialty enum + crosswalk.
         return {"specialty": "General Medicine", "confidence": 1.0}
 
-    async def shortlist(state: W1State) -> W1State:
+    async def shortlist(state: TriageState) -> TriageState:
         specialty = state.get("specialty") or "General Medicine"
-        candidates = await deps.shortlist(specialty, state.get("excluded_slot_ids", []))
+        candidates = await tools.shortlist(specialty, state.get("excluded_slot_ids", []))
         return {"candidates": candidates, "chosen_slot_id": None}
 
-    async def present_options(state: W1State) -> W1State:
+    async def present_options(state: TriageState) -> TriageState:
         # Pure: this node re-runs on resume, so no side effects here.
         choice = interrupt({"type": "pick_slot", "candidates": state["candidates"]})
         offered = {c["slot_id"] for c in state["candidates"]}
@@ -117,7 +117,7 @@ def build_w1(deps: W1Deps) -> StateGraph:
             return {"chosen_slot_id": None, "idempotency_key": None}
         return {"chosen_slot_id": slot_id, "idempotency_key": key}
 
-    async def book(state: W1State, config: RunnableConfig) -> W1State:
+    async def book(state: TriageState, config: RunnableConfig) -> TriageState:
         auth = state["auth"]
         patient_id = auth["acting_for_patient_id"]
         slot_id, key = state.get("chosen_slot_id"), state.get("idempotency_key")
@@ -126,7 +126,7 @@ def build_w1(deps: W1Deps) -> StateGraph:
             raise RuntimeError("API must resolve the acting patient before the run starts")
         if not slot_id or not key:
             raise RuntimeError("book reached without a validated slot choice")
-        booking = await deps.reserve(
+        booking = await tools.reserve(
             auth, slot_id=slot_id, patient_id=patient_id, idempotency_key=key, thread_id=_thread_id(config)
         )
         if booking:
@@ -137,16 +137,16 @@ def build_w1(deps: W1Deps) -> StateGraph:
             "reoffer_count": state.get("reoffer_count", 0) + 1,
         }
 
-    async def notify(state: W1State) -> W1State:
+    async def notify(state: TriageState) -> TriageState:
         # SMS through the egress adapter lands in T4.4 (fixed template, no clinical content).
         chosen = next(c for c in state["candidates"] if c["slot_id"] == state["chosen_slot_id"])
         reply = f"Booked with {chosen['doctor_name']} at {chosen['clinic_name']}, {chosen['starts_at']}."
         return {"outcome": "booked", "reply": reply}
 
-    async def front_desk_handoff(state: W1State, config: RunnableConfig) -> W1State:
+    async def front_desk_handoff(state: TriageState, config: RunnableConfig) -> TriageState:
         auth = state["auth"]
         reason = "no_slots" if not state.get("candidates") else "too_many_reoffers"
-        ticket = await deps.open_handoff(
+        ticket = await tools.open_handoff(
             auth,
             kind="front_desk",
             patient_id=auth["acting_for_patient_id"],
@@ -156,21 +156,21 @@ def build_w1(deps: W1Deps) -> StateGraph:
         return {"handoff_ticket_id": ticket, "outcome": "front_desk", "reply": FRONT_DESK_REPLY}
 
     # ---- routing ----
-    def after_rules(state: W1State) -> str:
+    def after_rules(state: TriageState) -> str:
         return "emergency_handoff" if state["red_flags"] else "match_specialty"
 
-    def after_shortlist(state: W1State) -> str:
+    def after_shortlist(state: TriageState) -> str:
         return "present_options" if state["candidates"] else "front_desk_handoff"
 
-    def after_choice(state: W1State) -> str:
+    def after_choice(state: TriageState) -> str:
         return "book" if state.get("chosen_slot_id") else "present_options"
 
-    def after_book(state: W1State) -> str:
+    def after_book(state: TriageState) -> str:
         if state.get("booking_id"):
             return "notify"
         return "shortlist" if state.get("reoffer_count", 0) < MAX_REOFFERS else "front_desk_handoff"
 
-    g = StateGraph(W1State)
+    g = StateGraph(TriageState)
     g.add_node("intake", intake)
     g.add_node("red_flag_rules", red_flag_rules)
     g.add_node("emergency_handoff", emergency_handoff)
