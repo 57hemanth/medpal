@@ -98,7 +98,7 @@ def records_world(admin_url: str) -> dict[str, str]:
             (
                 w["pa"],
                 w["carer_ok"],
-                ["records:read"],
+                ["records:read", "appointments:read", "appointments:write"],
                 w["ua"],
                 now - timedelta(days=1),
                 now + timedelta(days=30),
@@ -110,7 +110,7 @@ def records_world(admin_url: str) -> dict[str, str]:
             (
                 w["pa"],
                 w["carer_expired"],
-                ["records:read"],
+                ["records:read", "appointments:read"],
                 w["ua"],
                 now - timedelta(days=10),
                 now - timedelta(days=1),
@@ -122,7 +122,7 @@ def records_world(admin_url: str) -> dict[str, str]:
             (
                 w["pa"],
                 w["carer_revoked"],
-                ["records:read"],
+                ["records:read", "appointments:read"],
                 w["ua"],
                 now - timedelta(days=1),
                 now + timedelta(days=30),
@@ -214,6 +214,69 @@ async def test_desk_sees_demographics_patient_sees_only_self(pool, records_world
         own_rows = await (await conn.execute("SELECT patient_id::text AS p FROM patient")).fetchall()
     assert {w["pa"], w["pb"]} <= {r["p"] for r in desk_rows}  # type: ignore[call-overload]
     assert {r["p"] for r in own_rows} == {w["pa"]}  # type: ignore[call-overload]
+
+
+async def test_appointment_rls_uses_appointment_consent_not_record_consent(pool, records_world):
+    w = records_world
+    async with scoped(pool, as_(w["ua"], "patient", w["pa"])) as conn:
+        patient_rows = await (await conn.execute("SELECT patient_id::text AS p FROM appointment")).fetchall()
+    async with scoped(pool, as_(w["carer_ok"], "caregiver")) as conn:
+        carer_rows = await (await conn.execute("SELECT patient_id::text AS p FROM appointment")).fetchall()
+    async with scoped(pool, as_(w["carer_expired"], "caregiver")) as conn:
+        expired_rows = await (await conn.execute("SELECT patient_id::text AS p FROM appointment")).fetchall()
+    async with scoped(pool, as_(w["desk"], "desk")) as conn:
+        desk_rows = await (await conn.execute("SELECT patient_id::text AS p FROM appointment")).fetchall()
+
+    assert {r["p"] for r in patient_rows} == {w["pa"]}  # type: ignore[call-overload]
+    assert {r["p"] for r in carer_rows} == {w["pa"]}  # type: ignore[call-overload]
+    assert expired_rows == []
+    assert {w["pa"]} <= {r["p"] for r in desk_rows}  # type: ignore[call-overload]
+
+
+async def test_handoff_rls_limits_patient_reads_but_opens_desk_queue(pool, records_world):
+    w = records_world
+    with psycopg.connect(get_settings().migration_database_url) as conn, conn.transaction():
+        conn.execute(
+            "INSERT INTO handoff_ticket (kind, patient_id, reason, thread_id, created_by)"
+            " VALUES ('front_desk', %s, 'needs_help', 't-rls', %s)",
+            (w["pa"], w["ua"]),
+        )
+        conn.execute(
+            "INSERT INTO handoff_ticket (kind, patient_id, reason, thread_id, created_by)"
+            " VALUES ('front_desk', %s, 'needs_help', 't-hidden', %s)",
+            (w["pb"], w["ub"]),
+        )
+
+    async with scoped(pool, as_(w["ua"], "patient", w["pa"])) as conn:
+        own = await (await conn.execute("SELECT patient_id::text AS p FROM handoff_ticket")).fetchall()
+    async with scoped(pool, as_(w["desk"], "desk")) as conn:
+        desk = await (await conn.execute("SELECT patient_id::text AS p FROM handoff_ticket")).fetchall()
+
+    assert {r["p"] for r in own} == {w["pa"]}  # type: ignore[call-overload]
+    assert {w["pa"], w["pb"]} <= {r["p"] for r in desk}  # type: ignore[call-overload]
+
+
+async def test_audit_reads_are_patient_scoped_unless_compliance(pool, records_world):
+    w = records_world
+    with psycopg.connect(get_settings().migration_database_url) as conn, conn.transaction():
+        conn.execute(
+            "INSERT INTO audit_event (actor_id, actor_role, action, resource, record_id, patient_id, purpose)"
+            " VALUES (%s, 'patient', 'read', 'document', %s, %s, 'records qa')",
+            (w["ua"], w["doc_a"], w["pa"]),
+        )
+        conn.execute(
+            "INSERT INTO audit_event (actor_id, actor_role, action, resource, record_id, patient_id, purpose)"
+            " VALUES (%s, 'patient', 'read', 'document', %s, %s, 'records qa')",
+            (w["ub"], w["doc_b"], w["pb"]),
+        )
+
+    async with scoped(pool, as_(w["ua"], "patient", w["pa"])) as conn:
+        own = await (await conn.execute("SELECT patient_id::text AS p FROM audit_event")).fetchall()
+    async with scoped(pool, as_(w["comp"], "compliance")) as conn:
+        compliance = await (await conn.execute("SELECT patient_id::text AS p FROM audit_event")).fetchall()
+
+    assert {r["p"] for r in own} == {w["pa"]}  # type: ignore[call-overload]
+    assert {w["pa"], w["pb"]} <= {r["p"] for r in compliance}  # type: ignore[call-overload]
 
 
 # ---- writes ---------------------------------------------------------------------------------
