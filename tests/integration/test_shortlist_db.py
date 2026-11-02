@@ -72,3 +72,60 @@ async def test_excluded_slots_are_skipped(pool, specialty_world):
 
 async def test_unknown_specialty_returns_nothing(pool, specialty_world):
     assert await scheduling.shortlist(pool, "No Such Specialty") == []
+
+
+@pytest.fixture
+def two_city_world(admin_url: str) -> dict:
+    """Same specialty in Pune and Hyderabad. The Hyderabad doctor has the soonest slot."""
+    spec, pune, hyd, patient, user = (str(uuid.uuid4()) for _ in range(5))
+    name = f"TwoCity {spec[:8]}"
+    base = datetime.now(UTC) + timedelta(hours=1)
+    docs = {k: str(uuid.uuid4()) for k in ("hyd_soonest", "pune_en", "pune_mr")}
+    with psycopg.connect(admin_url) as conn, conn.transaction():
+        conn.execute("INSERT INTO specialty (specialty_id, name) VALUES (%s, %s)", (spec, name))
+        for cid, city in ((pune, "Pune"), (hyd, "Hyderabad")):
+            conn.execute(
+                "INSERT INTO clinic (clinic_id, name, city, district, opens_at, closes_at)"
+                " VALUES (%s, %s, %s, %s, '00:00', '23:59')",
+                (cid, f"{city} clinic", city, city),
+            )
+        rows = [
+            ("hyd_soonest", hyd, ["en", "te"], 0),
+            ("pune_en", pune, ["en"], 1),
+            ("pune_mr", pune, ["en", "mr"], 2),
+        ]
+        for key, cid, langs, hours in rows:
+            conn.execute(
+                "INSERT INTO doctor (doctor_id, name, specialty_id, languages) VALUES (%s, %s, %s, %s)",
+                (docs[key], key, spec, langs),
+            )
+            conn.execute(
+                "INSERT INTO slot (doctor_id, clinic_id, starts_at) VALUES (%s, %s, %s)",
+                (docs[key], cid, base + timedelta(hours=hours)),
+            )
+        conn.execute(
+            "INSERT INTO patient (patient_id, name, city, language)"
+            " VALUES (%s, 'Pune patient', 'Pune', 'mr')",
+            (patient,),
+        )
+        conn.execute(
+            "INSERT INTO app_user (user_id, role, patient_id) VALUES (%s, 'patient', %s)", (user, patient)
+        )
+    return {"name": name, "docs": docs, "patient": patient, "user": user}
+
+
+async def test_patient_city_filters_and_language_ranks_first(pool, two_city_world):
+    w = two_city_world
+    auth = {"user_id": w["user"], "role": "patient", "acting_for_patient_id": w["patient"]}
+    prefs = await scheduling.patient_preferences(pool, auth, w["patient"])  # read as the caller, under RLS
+    assert (prefs.city, prefs.language) == ("Pune", "mr")
+    result = await scheduling.shortlist(pool, w["name"], preferences=prefs)
+    # The Hyderabad doctor (soonest overall) is excluded;
+    # the Marathi speaker outranks an earlier English-only slot.
+    assert [c.doctor_id for c in result] == [w["docs"]["pune_mr"], w["docs"]["pune_en"]]
+
+
+async def test_preferences_are_not_readable_for_another_patient(pool, two_city_world, world):
+    other = {"user_id": world["user"], "role": "patient", "acting_for_patient_id": world["patient"]}
+    prefs = await scheduling.patient_preferences(pool, other, two_city_world["patient"])
+    assert prefs == scheduling.PatientPreferences()  # RLS hides the row: nothing leaks, defaults apply

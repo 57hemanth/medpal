@@ -18,6 +18,7 @@ def cand(slot: str, doctor: str = "d1") -> CandidateView:
         slot_id=slot,
         clinic_name="Baner",
         starts_at="2026-11-03T10:00:00+05:30",
+        display_time="Tue 3 Nov, 10:00",
     )
 
 
@@ -29,7 +30,7 @@ class FakeTriageTools:
         self.handoffs: list[dict] = []
         self.shortlist_calls = 0
 
-    async def shortlist(self, specialty, exclude_slot_ids):
+    async def shortlist(self, auth, specialty, exclude_slot_ids):
         self.shortlist_calls += 1
         return [s for s in self.slots if s["slot_id"] not in exclude_slot_ids][:3]
 
@@ -133,3 +134,11 @@ async def test_repeated_full_slots_end_at_front_desk():
 async def test_stub_red_flags_cover_hinglish_and_case(text):
     out = await start(app(FakeTriageTools([cand("s1")])), text)
     assert out["outcome"] == "emergency"
+
+
+async def test_booking_reply_uses_the_human_display_time():
+    tools = FakeTriageTools([cand("s1")])
+    graph = app(tools)
+    await start(graph, "Knee pain")
+    done = await graph.ainvoke(Command(resume={"slot_id": "s1", "idempotency_key": "k1"}), cfg())
+    assert done["reply"] == "Booked with Dr d1 at Baner on Tue 3 Nov, 10:00."
