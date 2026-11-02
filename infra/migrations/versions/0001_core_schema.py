@@ -1,14 +1,14 @@
-"""Slice 0 core schema: scheduling, identity, handoff tickets, append-only audit.
+"""Core schema: scheduling, identity, handoff tickets, append-only audit.
 
-The subset of the corrected data model that W1 needs end to end.
-Plan task T2.1 adds the clinical, records and pharmacy tables plus RLS in later revisions.
+The tables the triage and booking flow needs end to end. Migration 0002 adds the clinical, records
+and pharmacy tables plus row-level security.
 
-Corrections versus the original design's entity model, marked Δ:
-  Δ slot.capacity is enforced by the booking transaction, not a unique slot_id constraint
-  Δ appointment.idempotency_key is UNIQUE (retries never double-book)
-  Δ doctor_clinic many-to-many (doctors work across clinics)
-  Δ app_user is the identity behind consent grantees and audit actors
-  Δ audit_event is append-only (trigger) and partitioned by month
+Design notes:
+  * slot.capacity is enforced by the booking transaction (ADR-0005), not a unique slot_id constraint
+  * appointment.idempotency_key is UNIQUE, so client retries never double-book
+  * doctor_clinic is many-to-many: doctors work across clinics
+  * app_user is the identity behind consent grantees and audit actors
+  * audit_event is append-only (trigger) and partitioned by month
 
 Revision ID: 0001
 Revises:
@@ -135,7 +135,7 @@ def upgrade() -> None:
         trace_id   text,
         PRIMARY KEY (event_id, at)
     ) PARTITION BY RANGE (at);
-    -- Monthly partitions are added by a maintenance job (plan T2.1); the default catches the rest.
+    -- Monthly partitions are added by a maintenance job; the default partition catches the rest.
     CREATE TABLE audit_event_default PARTITION OF audit_event DEFAULT;
     CREATE INDEX audit_record_idx ON audit_event (resource, record_id, at);
     CREATE INDEX audit_patient_idx ON audit_event (patient_id, at);

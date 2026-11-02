@@ -37,7 +37,7 @@ FRONT_DESK_REPLY = (
     "and will contact you."
 )
 
-# ---- STUB (plan T3.7): replaced by the versioned, CMO-signed YAML rule engine. -------------
+# ---- STUB: to be replaced by a versioned, clinician-signed rule engine. --------------------
 # Deliberately over-inclusive and NOT clinically validated. It exists so the emergency path
 # is exercised end to end before the real rule engine lands.
 _STUB_RED_FLAG_PHRASES = {
@@ -100,7 +100,7 @@ def build_triage_graph(tools: TriageTools) -> StateGraph:
         return {"handoff_ticket_id": ticket, "outcome": "emergency", "reply": EMERGENCY_REPLY}
 
     async def match_specialty(state: TriageState) -> TriageState:
-        # STUB (plan T4.2): small-model classifier over the 38-specialty enum + crosswalk.
+        # STUB: to be replaced by a small-model classifier over the 38-specialty enum + crosswalk.
         return {"specialty": "General Medicine", "confidence": 1.0}
 
     async def shortlist(state: TriageState) -> TriageState:

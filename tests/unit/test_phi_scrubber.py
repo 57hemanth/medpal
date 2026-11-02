@@ -1,4 +1,4 @@
-"""Presidio de-identification policy (D4 classes, task cards T14/T24, pre-mortem F9).
+"""Presidio de-identification policy: identifier classes, Aadhaar blocking, names in English and Hinglish.
 
 Tests both directions: identifiers must not leak, AND clinical content must not be over-scrubbed
 (romanised Hindi once lost "fever for ten days" to a spaCy PERSON false positive).
@@ -29,8 +29,8 @@ def test_indian_mobile_formats_are_tokenised(phone):
 
 
 def test_abha_number_and_address_are_tokenised():
-    out = scrub("ABHA 12-3456-7890-1234, ABHA address priya.s@abdm")
-    assert "12-3456-7890-1234" not in out and "priya.s@abdm" not in out
+    out = scrub("ABHA 12-3456-7890-1234, ABHA address neha.k@abdm")
+    assert "12-3456-7890-1234" not in out and "neha.k@abdm" not in out
     assert "<ABHA_NUMBER_1>" in out and "<ABHA_ADDRESS_1>" in out
 
 
@@ -82,7 +82,7 @@ def test_twelve_digits_failing_checksum_are_not_blocked():
 # ---- names: English, lowercase, Hinglish, known identities --------------------------------------
 
 NAMES = [
-    "Priya Sharma",
+    "Neha Kulkarni",
     "Venkatesh Rao",
     "Lakshmi Narayanan",
     "Mohammed Imran",
@@ -142,7 +142,7 @@ def test_clinical_text_is_unchanged(text):
 
 
 def test_round_trip_and_stable_tokens():
-    text = "Priya Sharma called. Please ask Priya Sharma about her HbA1c."
+    text = "Neha Kulkarni called. Please ask Neha Kulkarni about her HbA1c."
     result = scrubber.tokenise(text)
     assert result.text.count("<PERSON_1>") == 2
     assert scrubber.reidentify(result.text, result.token_map) == text
@@ -150,23 +150,23 @@ def test_round_trip_and_stable_tokens():
 
 def test_token_map_is_shared_across_turns():
     tm = TokenMap()
-    a = scrubber.tokenise("Priya Sharma has fever", tm).text
-    b = scrubber.tokenise("Is Priya Sharma diabetic?", tm).text
+    a = scrubber.tokenise("Neha Kulkarni has fever", tm).text
+    b = scrubber.tokenise("Is Neha Kulkarni diabetic?", tm).text
     assert "<PERSON_1>" in a and "<PERSON_1>" in b
 
 
 def test_already_tokenised_text_is_stable():
-    once = scrub("Patient Priya Sharma, mobile 9876543210")
+    once = scrub("Patient Neha Kulkarni, mobile 9876543210")
     assert scrub(once) == once
 
 
 def test_assert_clean_blocks_a_leftover_identifier():
     with pytest.raises(EgressBlocked):
-        scrubber.assert_clean("Draft for Priya Sharma, call 9876543210")
-    scrubber.assert_clean(scrub("Draft for Priya Sharma, call 9876543210"))  # tokenised: passes
+        scrubber.assert_clean("Draft for Neha Kulkarni, call 9876543210")
+    scrubber.assert_clean(scrub("Draft for Neha Kulkarni, call 9876543210"))  # tokenised: passes
 
 
 def test_entities_report_types_never_values():
-    result = scrubber.tokenise("Priya Sharma, 9876543210")
+    result = scrubber.tokenise("Neha Kulkarni, 9876543210")
     assert set(result.entities) == {"PERSON", "IN_PHONE"}
-    assert all("Priya" not in e for e in result.entities)
+    assert all("Neha" not in e for e in result.entities)

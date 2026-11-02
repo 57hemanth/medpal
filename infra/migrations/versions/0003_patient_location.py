@@ -1,7 +1,7 @@
-"""Patient location preferences for the shortlist (task card T10).
+"""Patient location preferences for the shortlist.
 
 Found on the full 480k-slot dataset: a Pune patient was offered three Hyderabad doctors, because the
-shortlist knew nothing about where the patient is. Ranking per T10: specialty → same city →
+shortlist knew nothing about where the patient is. Ranking: specialty → same city →
 doctor speaks the patient's language → preferred clinic → earliest slot.
 
 Revision ID: 0003

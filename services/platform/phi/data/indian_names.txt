@@ -1,6 +1,6 @@
 # Common Indian given names and surnames, used as a case-insensitive safety net for the PERSON
-# recogniser on lowercase / Hinglish text, where spaCy's English NER misses names (pre-mortem F9).
-# Public, generic name lists (not records of real people). Extend from the generated layer (T2.6).
+# recogniser on lowercase / Hinglish text, where spaCy's English NER misses names.
+# Public, generic name lists (not records of real people). Extend as needed.
 # Words that are also common Hindi/English words (e.g. asha, kiran, pooja, raja) are deliberately
 # kept: over-scrubbing a word costs little on egress; leaking a name is a DPDP breach.
 # Excluded on purpose: "das" (Hindi "ten", as in "das din se bukhar"), since it carries clinical duration.

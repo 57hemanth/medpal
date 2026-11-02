@@ -11,11 +11,11 @@ async def auth_ctx(
     x_dev_role: str | None = Header(default=None),
     x_dev_patient_id: str | None = Header(default=None),
 ) -> AuthContext:
-    """Dev mode trusts X-Dev-* headers so the stack runs before Keycloak (plan T3.2).
+    """Dev mode trusts X-Dev-* headers so the stack runs before OIDC login (Keycloak) is added.
     Settings refuse auth_mode=dev in prod, and OIDC mode fails closed until it is implemented."""
     settings = get_settings()
     if settings.auth_mode != "dev":
-        raise HTTPException(status.HTTP_501_NOT_IMPLEMENTED, "OIDC authentication lands in plan T3.2")
+        raise HTTPException(status.HTTP_501_NOT_IMPLEMENTED, "OIDC authentication is not implemented yet")
     if not x_dev_user_id or x_dev_role not in ROLES:
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, "missing or invalid dev identity headers")
     acting_for = x_dev_patient_id if x_dev_role == "patient" else None

@@ -61,7 +61,7 @@ def _config(thread_id: str) -> dict[str, Any]:
 @router.post("", response_model=TriageOut)
 async def start_triage(body: TriageIn, request: Request, auth: Auth) -> TriageOut:
     if auth["role"] != "patient":
-        # Caregiver and desk booking-on-behalf need the consent service (plan T3.3).
+        # Caregiver and desk booking-on-behalf need the consent service (not built yet).
         raise HTTPException(
             status.HTTP_403_FORBIDDEN, "booking on behalf of another patient is not available yet"
         )

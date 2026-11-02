@@ -177,7 +177,7 @@ def _resolve_overlaps(results: list[RecognizerResult]) -> list[RecognizerResult]
 
 
 def _merge_adjacent(text: str, results: list[RecognizerResult]) -> list[RecognizerResult]:
-    """Join same-type spans separated only by spaces ("priya" + "sharma" → one PERSON)."""
+    """Join same-type spans separated only by spaces ("neha" + "kulkarni" → one PERSON)."""
     merged: list[RecognizerResult] = []
     for r in results:
         prev = merged[-1] if merged else None

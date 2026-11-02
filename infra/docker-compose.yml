@@ -1,5 +1,5 @@
 # Local stack. `make up` starts the data services; `make up-all` adds the API container.
-# Keycloak, Langfuse and MinIO join in later phases (plan T3.2, T3.5, T5.1).
+# Identity (Keycloak), tracing (Langfuse) and object storage (MinIO) join as those features land.
 name: medpal
 
 services:

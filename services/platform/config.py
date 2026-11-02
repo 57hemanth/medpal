@@ -16,11 +16,11 @@ class Settings(BaseSettings):
     # (superusers bypass RLS entirely). Migrations and seeding use the owner role.
     database_url: str = "postgresql://medpal_app:medpal_app@localhost:5433/medpal"
     migration_database_url: str = "postgresql://medpal:medpal@localhost:5433/medpal"
-    # LangGraph checkpoint tables live in their own schema (ADR-0003: each module owns its schema).
+    # LangGraph checkpoint tables live in their own schema (ADR-0001: each module owns its schema).
     checkpoint_schema: str = "langgraph"
     db_pool_max_size: int = 10
 
-    # "dev" trusts X-Dev-* headers so the stack runs before Keycloak lands (plan T3.2).
+    # "dev" trusts X-Dev-* headers so the stack runs before OIDC login (Keycloak) is added.
     # It is refused outside dev/test by the validator below.
     auth_mode: Literal["dev", "oidc"] = "dev"
 

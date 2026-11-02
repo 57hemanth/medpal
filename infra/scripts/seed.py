@@ -28,8 +28,8 @@ TABLES = [
 RESET = "TRUNCATE hospital, clinic, specialty, doctor, doctor_clinic, slot, patient, app_user CASCADE"
 
 # Fixed development identities (stable ids so dev auth headers and docs keep working).
-PRIYA_PATIENT, PRIYA_USER = "00000000-0000-0000-0000-0000000b0001", "00000000-0000-0000-0000-0000000e0001"
-RAVI_PATIENT, RAVI_USER = "00000000-0000-0000-0000-0000000b0002", "00000000-0000-0000-0000-0000000e0002"
+ASHA_PATIENT, ASHA_USER = "00000000-0000-0000-0000-0000000b0001", "00000000-0000-0000-0000-0000000e0001"
+ROHAN_PATIENT, ROHAN_USER = "00000000-0000-0000-0000-0000000b0002", "00000000-0000-0000-0000-0000000e0002"
 MOTHER_PATIENT, MOTHER_USER = "00000000-0000-0000-0000-0000000b0003", "00000000-0000-0000-0000-0000000e0005"
 DESK_USER = "00000000-0000-0000-0000-0000000e0003"
 DOCTOR_USER = "00000000-0000-0000-0000-0000000e0004"
@@ -52,9 +52,9 @@ def _identities(conn: psycopg.Connection) -> None:
     baner = conn.execute("SELECT clinic_id FROM clinic WHERE name = 'Baner Clinic'").fetchone()
     patients = [
         # (id, name, dob, city, language, preferred clinic)
-        (PRIYA_PATIENT, "Priya S", "1992-04-11", "Pune", "en", baner[0] if baner else None),
-        (RAVI_PATIENT, "Ravi K", "1985-09-02", "Hyderabad", "te", None),
-        (MOTHER_PATIENT, "Sunita S", "1963-07-21", "Pune", "mr", None),  # Priya's mother: caregiver scenario
+        (ASHA_PATIENT, "Asha Verma", "1992-04-11", "Pune", "en", baner[0] if baner else None),
+        (ROHAN_PATIENT, "Rohan Reddy", "1985-09-02", "Hyderabad", "te", None),
+        (MOTHER_PATIENT, "Lata Verma", "1963-07-21", "Pune", "mr", None),  # Asha's mother: the caregiver case
     ]
     for pid, name, dob, city, lang, clinic in patients:
         conn.execute(
@@ -62,7 +62,7 @@ def _identities(conn: psycopg.Connection) -> None:
             " VALUES (%s, %s, %s, %s, %s, %s)",
             (pid, name, dob, city, lang, clinic),
         )
-    for uid, pid in ((PRIYA_USER, PRIYA_PATIENT), (RAVI_USER, RAVI_PATIENT), (MOTHER_USER, MOTHER_PATIENT)):
+    for uid, pid in ((ASHA_USER, ASHA_PATIENT), (ROHAN_USER, ROHAN_PATIENT), (MOTHER_USER, MOTHER_PATIENT)):
         conn.execute(
             "INSERT INTO app_user (user_id, role, patient_id) VALUES (%s, 'patient', %s)", (uid, pid)
         )
@@ -80,13 +80,13 @@ def _identities(conn: psycopg.Connection) -> None:
     conn.execute(
         "INSERT INTO app_user (user_id, role, doctor_id) VALUES (%s, 'doctor', %s)", (DOCTOR_USER, doctor[0])
     )
-    # Mother grants Priya read access to her records for 180 days.
+    # Lata grants her daughter Asha read access to her records for 180 days.
     now = datetime.now(UTC)
     conn.execute(
         "INSERT INTO consent (patient_id, grantee_user_id, scope, purpose, granted_by, granted_at,"
         " expires_at)"
         " VALUES (%s, %s, '{records:read}', 'family care', %s, %s, %s)",
-        (MOTHER_PATIENT, PRIYA_USER, MOTHER_USER, now, now + timedelta(days=180)),
+        (MOTHER_PATIENT, ASHA_USER, MOTHER_USER, now, now + timedelta(days=180)),
     )
 
 
@@ -102,10 +102,10 @@ def main() -> None:
         counts = {table: _copy(conn, OUT_DIR / file, table, cols) for file, table, cols in TABLES}
         _identities(conn)
     print("loaded:", ", ".join(f"{t}={n:,}" for t, n in counts.items()))
-    print("dev identities: Priya (patient + caregiver for her mother), Ravi, desk, doctor, compliance")
+    print("dev identities: Asha (patient + caregiver for her mother Lata), Rohan, desk, doctor, compliance")
     print(
         "try: curl -s localhost:8000/triage -H 'content-type: application/json' "
-        f"-H 'X-Dev-User-Id: {PRIYA_USER}' -H 'X-Dev-Role: patient' -H 'X-Dev-Patient-Id: {PRIYA_PATIENT}' "
+        f"-H 'X-Dev-User-Id: {ASHA_USER}' -H 'X-Dev-Role: patient' -H 'X-Dev-Patient-Id: {ASHA_PATIENT}' "
         """-d '{"text": "knee pain for a week"}'"""
     )
 

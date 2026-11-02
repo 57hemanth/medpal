@@ -1,6 +1,6 @@
 """Scheduling: shortlist free slots and reserve one. Deterministic code (automation ladder rung 1).
 
-Booking contract (ADR-10):
+Booking contract (ADR-0005):
   * one transaction: advisory-lock the slot, count booked appointments, insert if under capacity;
   * a client-generated idempotency key makes retries return the same appointment;
   * a full slot returns None so the graph can re-offer, never double-book.
@@ -58,12 +58,12 @@ class Candidate:
     starts_at: datetime
 
 
-# Earliest free slot per doctor for a specialty, ranked per task card T10:
+# Earliest free slot per doctor for a specialty, ranked:
 #   same city as the patient (filter) → doctor speaks the patient's language → preferred clinic → soonest.
 # Shape matters at 480k slots: the LATERAL ... LIMIT 1 lets each doctor's (doctor_id, starts_at) index scan
 # stop at the first free slot, so cost grows with how booked-up doctors are, not with the calendar size.
 # Measured with 6,200 bookings: 4.5 ms vs 60 ms for a DISTINCT ON over every future slot.
-# The Redis display cache (plan T4.3) sits in front for listing only; reserve() always re-checks capacity.
+# A display cache may sit in front for listing only; reserve() always re-checks capacity.
 _SHORTLIST = """
 SELECT d.doctor_id::text, d.name AS doctor_name, f.slot_id::text, c.name AS clinic_name, f.starts_at
 FROM doctor d

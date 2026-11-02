@@ -56,7 +56,7 @@ markers = [
   "integration: needs the docker-compose stack (Postgres, Redis); skipped when unavailable",
 ]
 
-# Module boundaries (ADR-0003): only services.platform.egress may talk to vendors,
+# Module boundaries (ADR-0001): only services.platform.egress may talk to vendors,
 # and workflow modules don't reach into each other.
 [tool.importlinter]
 root_packages = ["services"]

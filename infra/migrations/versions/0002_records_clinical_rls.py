@@ -3,13 +3,13 @@
 Completes the corrected data model and enforces the access matrix in
 the database, so a forgotten WHERE clause in application code cannot leak another patient's data.
 
-Δ versus the original design's entity model:
-  Δ doc_chunk.patient_id denormalised (scope filter + RLS without a join)
-  Δ consent carries purpose, granted_by, revoked_at (DPDP revocation)
-  Δ note_version holds only SIGNED notes, immutable (trigger); drafts live in graph state
-  Δ medicine (formulary) separated from medicine_stock (per clinic, with as_of)
-  Δ specialty_crosswalk with reviewer mark
-  Δ ingest_job for upload status
+Design notes:
+  * doc_chunk.patient_id is denormalised, so the scope filter and RLS need no join
+  * consent carries purpose, granted_by and revoked_at (DPDP: consent must be revocable)
+  * note_version holds only SIGNED notes and is immutable (trigger); drafts live in graph state
+  * medicine (formulary) is separate from medicine_stock (per clinic, with as_of)
+  * specialty_crosswalk carries a reviewer mark
+  * ingest_job tracks upload status
 
 Security model:
   * The app connects as `medpal_app` (NOSUPERUSER, NOBYPASSRLS), created by infra/postgres/init in dev
@@ -93,7 +93,7 @@ def upgrade() -> None:
     );
     CREATE INDEX doc_chunk_patient_idx ON doc_chunk (patient_id);
     CREATE INDEX doc_chunk_tsv_idx ON doc_chunk USING gin (tsv);
-    -- No ANN index: records retrieval is always scoped to one patient; exact scan is exact and fast (ADR-06).
+    -- No ANN index: records retrieval is always scoped to one patient; exact scan is exact and fast (ADR-0007).
 
     CREATE TABLE encounter (
         encounter_id   uuid PRIMARY KEY DEFAULT gen_random_uuid(),

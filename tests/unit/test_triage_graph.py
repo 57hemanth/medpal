@@ -8,7 +8,7 @@ from services.agent.triage.graph import EMERGENCY_REPLY, MAX_REOFFERS, build_tri
 from services.agent.triage.state import CandidateView
 from services.platform.auth import AuthContext
 
-PRIYA: AuthContext = {"user_id": "u-priya", "role": "patient", "acting_for_patient_id": "p-priya"}
+ASHA: AuthContext = {"user_id": "u-asha", "role": "patient", "acting_for_patient_id": "p-asha"}
 
 
 def cand(slot: str, doctor: str = "d1") -> CandidateView:
@@ -56,7 +56,7 @@ def cfg(thread: str = "t1") -> dict:
 
 
 async def start(graph, text: str, thread: str = "t1"):
-    return await graph.ainvoke({"auth": PRIYA, "intake_text": text}, cfg(thread))
+    return await graph.ainvoke({"auth": ASHA, "intake_text": text}, cfg(thread))
 
 
 async def test_red_flag_ends_in_emergency_handoff_without_booking():
@@ -67,7 +67,7 @@ async def test_red_flag_ends_in_emergency_handoff_without_booking():
     assert out["reply"] == EMERGENCY_REPLY
     assert "__interrupt__" not in out
     assert tools.handoffs == [
-        {"kind": "emergency", "patient_id": "p-priya", "reason": "stub_breathless,stub_chest_pain"}
+        {"kind": "emergency", "patient_id": "p-asha", "reason": "stub_breathless,stub_chest_pain"}
     ]
     assert tools.shortlist_calls == 0 and tools.bookings == {}
 

@@ -8,8 +8,8 @@ from services.agent.triage.graph import build_triage_graph
 from services.api.main import create_app
 from tests.unit.test_triage_graph import FakeTriageTools, cand
 
-PRIYA = {"X-Dev-User-Id": "u-priya", "X-Dev-Role": "patient", "X-Dev-Patient-Id": "p-priya"}
-RAVI = {"X-Dev-User-Id": "u-ravi", "X-Dev-Role": "patient", "X-Dev-Patient-Id": "p-ravi"}
+ASHA = {"X-Dev-User-Id": "u-asha", "X-Dev-Role": "patient", "X-Dev-Patient-Id": "p-asha"}
+ROHAN = {"X-Dev-User-Id": "u-rohan", "X-Dev-Role": "patient", "X-Dev-Patient-Id": "p-rohan"}
 
 
 @pytest.fixture
@@ -30,7 +30,7 @@ async def test_requires_identity(client):
 
 
 async def test_book_flow(client):
-    r = await client.post("/triage", json={"text": "knee pain for a week"}, headers=PRIYA)
+    r = await client.post("/triage", json={"text": "knee pain for a week"}, headers=ASHA)
     assert r.status_code == 200
     body = r.json()
     assert body["status"] == "awaiting_choice"
@@ -39,7 +39,7 @@ async def test_book_flow(client):
     r = await client.post(
         f"/triage/{body['thread_id']}/resume",
         json={"slot_id": "s1", "idempotency_key": "key-00000001"},
-        headers=PRIYA,
+        headers=ASHA,
     )
     assert r.status_code == 200
     assert r.json()["status"] == "booked"
@@ -48,29 +48,29 @@ async def test_book_flow(client):
     r = await client.post(
         f"/triage/{body['thread_id']}/resume",
         json={"slot_id": "s1", "idempotency_key": "key-00000001"},
-        headers=PRIYA,
+        headers=ASHA,
     )
     assert r.status_code == 409
 
 
 async def test_cannot_resume_someone_elses_thread(client):
-    r = await client.post("/triage", json={"text": "knee pain"}, headers=PRIYA)
+    r = await client.post("/triage", json={"text": "knee pain"}, headers=ASHA)
     thread = r.json()["thread_id"]
     r = await client.post(
-        f"/triage/{thread}/resume", json={"slot_id": "s1", "idempotency_key": "key-00000002"}, headers=RAVI
+        f"/triage/{thread}/resume", json={"slot_id": "s1", "idempotency_key": "key-00000002"}, headers=ROHAN
     )
     assert r.status_code == 403
 
 
 async def test_unknown_thread(client):
     r = await client.post(
-        "/triage/nope/resume", json={"slot_id": "s1", "idempotency_key": "key-00000003"}, headers=PRIYA
+        "/triage/nope/resume", json={"slot_id": "s1", "idempotency_key": "key-00000003"}, headers=ASHA
     )
     assert r.status_code == 404
 
 
 async def test_emergency_response(client):
-    r = await client.post("/triage", json={"text": "sudden chest pain"}, headers=PRIYA)
+    r = await client.post("/triage", json={"text": "sudden chest pain"}, headers=ASHA)
     assert r.json()["status"] == "emergency"
     assert r.json()["handoff_ticket_id"]
 

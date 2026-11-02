@@ -78,7 +78,7 @@ def common_indian_names() -> list[str]:
 
 
 def name_list_recognizer() -> PatternRecognizer:
-    """Safety net for lowercase/Hinglish text where spaCy NER misses names (pre-mortem F9)."""
+    """Safety net for lowercase/Hinglish text where spaCy NER misses names."""
     return PatternRecognizer(
         supported_entity="PERSON",
         name="IndianNameListRecognizer",

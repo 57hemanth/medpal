@@ -2,14 +2,13 @@
 
 Everything here is invented for the engagement: hospital and clinic names use real Pune and
 Hyderabad localities but describe no real facility, and the people built from these pools are
-synthetic. Assumptions that need the client's confirmation are listed in docs/assumptions.md
-(Q9 doctor count and split; A12 realism).
+synthetic. The doctor count, specialty list and demand weights are modelling choices, not real data.
 """
 
 from dataclasses import dataclass
 from datetime import time
 
-# ---- network: 6 hospitals, 22 clinics ------------------------------------------------
+# ---- network: 6 hospitals, 22 clinics across two cities ------------------------------
 
 
 @dataclass(frozen=True)
@@ -74,8 +73,7 @@ CLINICS = [
 ]
 
 # ---- 38 bookable outpatient specialties, with relative demand ------------------------------------
-# Our own list of 38 outpatient-bookable
-# specialties typical of an Indian multi-specialty network. The client must confirm it (assumption A12).
+# 38 outpatient-bookable specialties typical of an Indian multi-specialty network (a modelling choice).
 # Weight = share of the doctors above the 10-per-specialty floor.
 
 SPECIALTIES: dict[str, int] = {
