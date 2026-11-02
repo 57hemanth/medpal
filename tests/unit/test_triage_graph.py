@@ -29,9 +29,11 @@ class FakeTriageTools:
         self.bookings: dict[str, str] = {}  # idempotency_key -> slot_id
         self.handoffs: list[dict] = []
         self.shortlist_calls = 0
+        self.specialties: list[str] = []
 
     async def shortlist(self, auth, specialty, exclude_slot_ids):
         self.shortlist_calls += 1
+        self.specialties.append(specialty)
         return [s for s in self.slots if s["slot_id"] not in exclude_slot_ids][:3]
 
     async def reserve(self, auth, *, slot_id, patient_id, idempotency_key, thread_id):
@@ -67,7 +69,7 @@ async def test_red_flag_ends_in_emergency_handoff_without_booking():
     assert out["reply"] == EMERGENCY_REPLY
     assert "__interrupt__" not in out
     assert tools.handoffs == [
-        {"kind": "emergency", "patient_id": "p-asha", "reason": "stub_breathless,stub_chest_pain"}
+        {"kind": "emergency", "patient_id": "p-asha", "reason": "redflag_breathing,redflag_chest_pain"}
     ]
     assert tools.shortlist_calls == 0 and tools.bookings == {}
 
@@ -80,6 +82,9 @@ async def test_routine_intake_pauses_with_candidates_then_books_on_resume():
     [intr] = paused["__interrupt__"]
     assert intr.value["type"] == "pick_slot"
     assert [c["slot_id"] for c in intr.value["candidates"]] == ["s1", "s2"]
+    assert paused["specialty"] == "Orthopaedics"
+    assert paused["ruleset_status"] == "draft"
+    assert tools.specialties == ["Orthopaedics"]
 
     done = await graph.ainvoke(Command(resume={"slot_id": "s2", "idempotency_key": "k1"}), cfg())
     assert done["outcome"] == "booked"
@@ -131,7 +136,7 @@ async def test_repeated_full_slots_end_at_front_desk():
 
 
 @pytest.mark.parametrize("text", ["seene mein dard ho raha hai", "He FAINTED at work"])
-async def test_stub_red_flags_cover_hinglish_and_case(text):
+async def test_draft_red_flags_cover_hinglish_and_case(text):
     out = await start(app(FakeTriageTools([cand("s1")])), text)
     assert out["outcome"] == "emergency"
 

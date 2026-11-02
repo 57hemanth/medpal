@@ -20,8 +20,12 @@ class TriageState(TypedDict, total=False):
     auth: AuthContext
     intake_text: str
     red_flags: list[str]
+    ruleset_version: str
+    ruleset_status: str
     specialty: str | None
     confidence: float | None
+    specialty_rule_id: str | None
+    needs_clarification: bool
     candidates: list[CandidateView]
     excluded_slot_ids: list[str]  # slots that turned out full; never re-offered in this run
     reoffer_count: int

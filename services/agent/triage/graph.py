@@ -24,6 +24,8 @@ from langgraph.types import interrupt
 
 from services.platform.auth import AuthContext
 
+from .rules import RULESET_STATUS, RULESET_VERSION, match_red_flags
+from .rules import match_specialty as classify_specialty
 from .state import CandidateView, TriageState
 
 MAX_REOFFERS = 3
@@ -36,22 +38,6 @@ FRONT_DESK_REPLY = (
     "We couldn't find the right appointment automatically. Our front desk has your request "
     "and will contact you."
 )
-
-# ---- STUB: to be replaced by a versioned, clinician-signed rule engine. --------------------
-# Deliberately over-inclusive and NOT clinically validated. It exists so the emergency path
-# is exercised end to end before the real rule engine lands.
-_STUB_RED_FLAG_PHRASES = {
-    "chest pain": "stub_chest_pain",
-    "chest tightness": "stub_chest_pain",
-    "breathless": "stub_breathless",
-    "can't breathe": "stub_breathless",
-    "unconscious": "stub_unconscious",
-    "fainted": "stub_unconscious",
-    "slurred speech": "stub_stroke",
-    "face drooping": "stub_stroke",
-    "suicide": "stub_self_harm",
-    "seene mein dard": "stub_chest_pain",
-}
 
 
 class TriageTools(Protocol):
@@ -79,14 +65,14 @@ def build_triage_graph(tools: TriageTools) -> StateGraph:
         return {
             "intake_text": state["intake_text"].strip(),
             "red_flags": [],
+            "ruleset_version": RULESET_VERSION,
+            "ruleset_status": RULESET_STATUS,
             "excluded_slot_ids": [],
             "reoffer_count": 0,
         }
 
     async def red_flag_rules(state: TriageState) -> TriageState:
-        text = state["intake_text"].lower()
-        flags = sorted({rule for phrase, rule in _STUB_RED_FLAG_PHRASES.items() if phrase in text})
-        return {"red_flags": flags}
+        return {"red_flags": match_red_flags(state["intake_text"])}
 
     async def emergency_handoff(state: TriageState, config: RunnableConfig) -> TriageState:
         auth = state["auth"]
@@ -100,8 +86,13 @@ def build_triage_graph(tools: TriageTools) -> StateGraph:
         return {"handoff_ticket_id": ticket, "outcome": "emergency", "reply": EMERGENCY_REPLY}
 
     async def match_specialty(state: TriageState) -> TriageState:
-        # STUB: to be replaced by a small-model classifier over the 38-specialty enum + crosswalk.
-        return {"specialty": "General Medicine", "confidence": 1.0}
+        match = classify_specialty(state["intake_text"])
+        return {
+            "specialty": match.specialty,
+            "confidence": match.confidence,
+            "specialty_rule_id": match.rule_id,
+            "needs_clarification": match.needs_clarification,
+        }
 
     async def shortlist(state: TriageState) -> TriageState:
         specialty = state.get("specialty") or "General Medicine"

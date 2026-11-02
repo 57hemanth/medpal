@@ -34,6 +34,10 @@ class TriageOut(BaseModel):
     candidates: list[dict[str, Any]] | None = None
     booking_id: str | None = None
     handoff_ticket_id: str | None = None
+    ruleset_version: str | None = None
+    ruleset_status: str | None = None
+    specialty: str | None = None
+    confidence: float | None = None
 
 
 def _to_out(thread_id: str, out: dict[str, Any]) -> TriageOut:
@@ -44,6 +48,10 @@ def _to_out(thread_id: str, out: dict[str, Any]) -> TriageOut:
             status="awaiting_choice",
             reply="Please pick one of these appointments.",
             candidates=value["candidates"],
+            ruleset_version=out.get("ruleset_version"),
+            ruleset_status=out.get("ruleset_status"),
+            specialty=out.get("specialty"),
+            confidence=out.get("confidence"),
         )
     return TriageOut(
         thread_id=thread_id,
@@ -51,6 +59,10 @@ def _to_out(thread_id: str, out: dict[str, Any]) -> TriageOut:
         reply=out.get("reply"),
         booking_id=out.get("booking_id"),
         handoff_ticket_id=out.get("handoff_ticket_id"),
+        ruleset_version=out.get("ruleset_version"),
+        ruleset_status=out.get("ruleset_status"),
+        specialty=out.get("specialty"),
+        confidence=out.get("confidence"),
     )
 
 
