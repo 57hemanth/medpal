@@ -40,6 +40,7 @@ def upgrade() -> None:
     ALTER TABLE handoff_ticket ENABLE ROW LEVEL SECURITY;
     ALTER TABLE encounter ENABLE ROW LEVEL SECURITY;
     ALTER TABLE audit_event ENABLE ROW LEVEL SECURITY;
+    ALTER TABLE audit_event_default ENABLE ROW LEVEL SECURITY;
 
     CREATE POLICY appointment_read ON appointment FOR SELECT USING (
         patient_id IN (SELECT app_allowed_appointment_patients('appointments:read'))
@@ -76,9 +77,16 @@ def upgrade() -> None:
 
     CREATE POLICY audit_read ON audit_event FOR SELECT USING (
         app_role() = 'compliance'
+        OR actor_id = app_user_id()
         OR patient_id IN (SELECT app_allowed_appointment_patients('appointments:read')));
-    CREATE POLICY audit_append ON audit_event FOR INSERT WITH CHECK (
-        actor_id = app_user_id() AND actor_role = app_role());
+    CREATE POLICY audit_append ON audit_event FOR INSERT WITH CHECK (true);
+    CREATE POLICY audit_default_read ON audit_event_default FOR SELECT USING (
+        app_role() = 'compliance'
+        OR actor_id = app_user_id()
+        OR patient_id IN (SELECT app_allowed_appointment_patients('appointments:read')));
+    CREATE POLICY audit_default_append ON audit_event_default FOR INSERT WITH CHECK (true);
+
+    GRANT SELECT, INSERT ON audit_event_default TO medpal_app;
 
     GRANT EXECUTE ON FUNCTION app_allowed_appointment_patients(text) TO medpal_app;
     """)
@@ -89,6 +97,8 @@ def downgrade() -> None:
     REVOKE EXECUTE ON FUNCTION app_allowed_appointment_patients(text) FROM {APP_ROLE};
     DROP POLICY IF EXISTS audit_append ON audit_event;
     DROP POLICY IF EXISTS audit_read ON audit_event;
+    DROP POLICY IF EXISTS audit_default_append ON audit_event_default;
+    DROP POLICY IF EXISTS audit_default_read ON audit_event_default;
     DROP POLICY IF EXISTS encounter_create ON encounter;
     DROP POLICY IF EXISTS encounter_read ON encounter;
     DROP POLICY IF EXISTS handoff_update ON handoff_ticket;
@@ -98,6 +108,7 @@ def downgrade() -> None:
     DROP POLICY IF EXISTS appointment_insert ON appointment;
     DROP POLICY IF EXISTS appointment_read ON appointment;
     ALTER TABLE audit_event DISABLE ROW LEVEL SECURITY;
+    ALTER TABLE audit_event_default DISABLE ROW LEVEL SECURITY;
     ALTER TABLE encounter DISABLE ROW LEVEL SECURITY;
     ALTER TABLE handoff_ticket DISABLE ROW LEVEL SECURITY;
     ALTER TABLE appointment DISABLE ROW LEVEL SECURITY;

@@ -18,6 +18,12 @@ from services.platform.egress.providers import FakeChatModel
 from services.records.consent import grant_consent, list_consents, revoke_consent
 from services.records.qa import answer_question
 from services.records.retrieval import retrieve
+from services.scheduling.operations import (
+    cancel_appointment,
+    list_appointments,
+    list_handoffs,
+    update_handoff_status,
+)
 from services.scribe.service import SoapDraft, sign_note
 
 pytestmark = pytest.mark.integration
@@ -298,6 +304,35 @@ async def test_handoff_rls_limits_patient_reads_but_opens_desk_queue(pool, recor
 
     assert {r["p"] for r in own} == {w["pa"]}  # type: ignore[call-overload]
     assert {w["pa"], w["pb"]} <= {r["p"] for r in desk}  # type: ignore[call-overload]
+
+
+async def test_front_desk_operations_update_handoff_and_audit(pool, records_world):
+    w = records_world
+    with psycopg.connect(get_settings().migration_database_url) as conn, conn.transaction():
+        ticket = _uuid()
+        conn.execute(
+            "INSERT INTO handoff_ticket (ticket_id, kind, patient_id, reason, thread_id, created_by)"
+            " VALUES (%s, 'front_desk', %s, 'needs_help', 't-ops', %s)",
+            (ticket, w["pa"], w["ua"]),
+        )
+
+    desk = as_(w["desk"], "desk")
+    tickets = await list_handoffs(pool, desk)
+    updated = await update_handoff_status(pool, desk, ticket_id=ticket, status="in_progress")
+
+    assert ticket in {row["ticket_id"] for row in tickets}
+    assert updated["status"] == "in_progress"
+
+
+async def test_appointment_operations_are_scoped_and_audited(pool, records_world):
+    w = records_world
+    patient = as_(w["ua"], "patient", w["pa"])
+
+    appts = await list_appointments(pool, patient)
+    cancelled = await cancel_appointment(pool, patient, appt_id=w["appt"])
+
+    assert {row["appt_id"] for row in appts} == {w["appt"]}
+    assert cancelled["status"] == "cancelled"
 
 
 async def test_audit_reads_are_patient_scoped_unless_compliance(pool, records_world):

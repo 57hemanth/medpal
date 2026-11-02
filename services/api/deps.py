@@ -4,9 +4,11 @@ from fastapi import Header, HTTPException, status
 
 from services.platform.auth import ROLES, AuthContext
 from services.platform.config import get_settings
+from services.platform.oidc import OidcError, verify_token
 
 
 async def auth_ctx(
+    authorization: str | None = Header(default=None),
     x_dev_user_id: str | None = Header(default=None),
     x_dev_role: str | None = Header(default=None),
     x_dev_patient_id: str | None = Header(default=None),
@@ -15,7 +17,12 @@ async def auth_ctx(
     Settings refuse auth_mode=dev in prod, and OIDC mode fails closed until it is implemented."""
     settings = get_settings()
     if settings.auth_mode != "dev":
-        raise HTTPException(status.HTTP_501_NOT_IMPLEMENTED, "OIDC authentication is not implemented yet")
+        if not authorization or not authorization.startswith("Bearer "):
+            raise HTTPException(status.HTTP_401_UNAUTHORIZED, "missing bearer token")
+        try:
+            return verify_token(authorization.removeprefix("Bearer ").strip(), settings)
+        except OidcError as exc:
+            raise HTTPException(status.HTTP_401_UNAUTHORIZED, str(exc)) from exc
     if not x_dev_user_id or x_dev_role not in ROLES:
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, "missing or invalid dev identity headers")
     acting_for = x_dev_patient_id if x_dev_role == "patient" else None

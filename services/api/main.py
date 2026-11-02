@@ -9,7 +9,7 @@ from langgraph.checkpoint.postgres.aio import AsyncPostgresSaver
 
 from services.agent.triage.graph import build_triage_graph
 from services.agent.triage.tools import PgTriageTools
-from services.api.routers import consent, records, scribe, triage
+from services.api.routers import consent, me, ops, records, scribe, triage
 from services.platform.config import get_settings
 from services.platform.db import app_pool, checkpoint_pool
 from services.platform.egress import EgressChatClient, build_chat_model
@@ -49,9 +49,11 @@ def create_app(*, triage_graph: Any | None = None) -> FastAPI:
         lifespan=_injected_lifespan if triage_graph is not None else _postgres_lifespan,
     )
     app.include_router(triage.router)
+    app.include_router(me.router)
     app.include_router(records.router)
     app.include_router(consent.router)
     app.include_router(scribe.router)
+    app.include_router(ops.router)
 
     @app.get("/healthz", tags=["ops"])
     async def healthz() -> dict[str, str]:

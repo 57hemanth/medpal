@@ -23,6 +23,9 @@ class Settings(BaseSettings):
     # "dev" trusts X-Dev-* headers so the stack runs before OIDC login (Keycloak) is added.
     # It is refused outside dev/test by the validator below.
     auth_mode: Literal["dev", "oidc"] = "dev"
+    oidc_issuer: str | None = None
+    oidc_audience: str | None = None
+    oidc_jwks_url: str | None = None
 
     # Hosted generation goes through services.platform.egress, which de-identifies first.
     # `fake` is deterministic and exists for local tests only; production must pick a provider.
