@@ -2,9 +2,12 @@
 
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
+from pathlib import Path
 from typing import Any
 
-from fastapi import FastAPI
+from fastapi import FastAPI, HTTPException, Request
+from fastapi.responses import HTMLResponse
+from fastapi.staticfiles import StaticFiles
 from langgraph.checkpoint.postgres.aio import AsyncPostgresSaver
 
 from services.agent.triage.graph import build_triage_graph
@@ -14,6 +17,8 @@ from services.platform.config import get_settings
 from services.platform.db import app_pool, checkpoint_pool
 from services.platform.egress import EgressChatClient, build_chat_model
 from services.records.storage import MemoryObjectStore
+
+STATIC_DIR = next((path for path in (Path("static"), Path("web/dist")) if path.exists()), None)
 
 
 @asynccontextmanager
@@ -54,6 +59,17 @@ def create_app(*, triage_graph: Any | None = None) -> FastAPI:
     app.include_router(consent.router)
     app.include_router(scribe.router)
     app.include_router(ops.router)
+
+    if STATIC_DIR is not None:
+        app.mount("/assets", StaticFiles(directory=STATIC_DIR / "assets"), name="assets")
+
+        @app.get("/{path:path}", include_in_schema=False)
+        async def spa(path: str, request: Request) -> HTMLResponse:
+            if path.startswith(("api/", "triage/", "docs", "openapi.json", "healthz")) or "." in path:
+                raise HTTPException(status_code=404)
+            if "text/html" not in request.headers.get("accept", ""):
+                raise HTTPException(status_code=404)
+            return HTMLResponse((STATIC_DIR / "index.html").read_text())
 
     @app.get("/healthz", tags=["ops"])
     async def healthz() -> dict[str, str]:

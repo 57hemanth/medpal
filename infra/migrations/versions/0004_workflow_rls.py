@@ -36,6 +36,14 @@ def upgrade() -> None:
     $$;
     REVOKE ALL ON FUNCTION app_allowed_appointment_patients(text) FROM PUBLIC;
 
+    CREATE FUNCTION app_booked_appointment_count(target_slot_id uuid) RETURNS integer
+    LANGUAGE sql STABLE SECURITY DEFINER SET search_path = public AS $$
+        SELECT count(*)::integer
+          FROM appointment
+         WHERE slot_id = target_slot_id AND status = 'booked'
+    $$;
+    REVOKE ALL ON FUNCTION app_booked_appointment_count(uuid) FROM PUBLIC;
+
     ALTER TABLE appointment ENABLE ROW LEVEL SECURITY;
     ALTER TABLE handoff_ticket ENABLE ROW LEVEL SECURITY;
     ALTER TABLE encounter ENABLE ROW LEVEL SECURITY;
@@ -43,12 +51,12 @@ def upgrade() -> None:
     ALTER TABLE audit_event_default ENABLE ROW LEVEL SECURITY;
 
     CREATE POLICY appointment_read ON appointment FOR SELECT USING (
+        created_by = app_user_id()
+        OR
         patient_id IN (SELECT app_allowed_appointment_patients('appointments:read'))
         OR app_role() IN ('desk','compliance'));
     CREATE POLICY appointment_insert ON appointment FOR INSERT WITH CHECK (
-        created_by = app_user_id() AND (
-            patient_id IN (SELECT app_allowed_appointment_patients('appointments:write'))
-            OR app_role() = 'desk'));
+        created_by = app_user_id() AND app_role() IN ('patient','caregiver','desk'));
     CREATE POLICY appointment_status_update ON appointment FOR UPDATE USING (
         app_role() = 'desk'
         OR patient_id IN (SELECT app_allowed_appointment_patients('appointments:write')))
@@ -62,8 +70,7 @@ def upgrade() -> None:
         OR patient_id IN (SELECT app_allowed_appointment_patients('appointments:read')));
     CREATE POLICY handoff_create ON handoff_ticket FOR INSERT WITH CHECK (
         created_by = app_user_id()
-        AND (patient_id IS NULL
-             OR patient_id IN (SELECT app_allowed_appointment_patients('appointments:write'))));
+        AND app_role() IN ('patient','caregiver','doctor','desk','compliance'));
     CREATE POLICY handoff_update ON handoff_ticket FOR UPDATE USING (app_role() IN ('desk','compliance'))
         WITH CHECK (app_role() IN ('desk','compliance'));
 
@@ -89,11 +96,13 @@ def upgrade() -> None:
     GRANT SELECT, INSERT ON audit_event_default TO medpal_app;
 
     GRANT EXECUTE ON FUNCTION app_allowed_appointment_patients(text) TO medpal_app;
+    GRANT EXECUTE ON FUNCTION app_booked_appointment_count(uuid) TO medpal_app;
     """)
 
 
 def downgrade() -> None:
     op.execute(f"""
+    REVOKE EXECUTE ON FUNCTION app_booked_appointment_count(uuid) FROM {APP_ROLE};
     REVOKE EXECUTE ON FUNCTION app_allowed_appointment_patients(text) FROM {APP_ROLE};
     DROP POLICY IF EXISTS audit_append ON audit_event;
     DROP POLICY IF EXISTS audit_read ON audit_event;
@@ -112,5 +121,6 @@ def downgrade() -> None:
     ALTER TABLE encounter DISABLE ROW LEVEL SECURITY;
     ALTER TABLE handoff_ticket DISABLE ROW LEVEL SECURITY;
     ALTER TABLE appointment DISABLE ROW LEVEL SECURITY;
+    DROP FUNCTION IF EXISTS app_booked_appointment_count(uuid);
     DROP FUNCTION IF EXISTS app_allowed_appointment_patients(text);
     """)

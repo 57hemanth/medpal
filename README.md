@@ -7,8 +7,8 @@ Outpatient clinics run on phone calls and paperwork. Patients struggle to work o
 MedPal automates the routine parts and keeps humans in charge of every decision that matters:
 
 - **Find the right doctor:** describe symptoms in plain English or Hinglish. MedPal checks for emergencies *first* and hands them to a human immediately, never diagnosing. Otherwise it offers the soonest slots near you, preferring doctors who speak your language.
-- **Ask your records** *(in progress)*: upload reports and ask questions. Every answer will cite the document and page, and it can only see your own records, or those a family member has explicitly shared with you.
-- **Consultation scribe** *(planned)*: turns a consultation into a draft note. Nothing is saved until the doctor reviews and signs it, and the model never fills in a medicine the doctor didn't say.
+- **Ask your records**: upload reports and ask questions. Every answer cites the document page, and it can only see your own records, or those a family member has explicitly shared with you.
+- **Consultation scribe**: turns a consultation into a draft SOAP note. Nothing is saved until the doctor reviews and signs it, and the model never fills in a medicine the doctor didn't say.
 
 ## Built for healthcare, not just demoed for it
 
@@ -18,7 +18,7 @@ MedPal automates the routine parts and keeps humans in charge of every decision 
 - **Everything is audited.** Every write that touches patient data is logged with who, why and when, in the same transaction.
 - **Built to India's DPDP Act constraints:** consent with scope and expiry, revocable at any time, and identified data that stays in-region.
 
-**Stack:** Python 3.12 · FastAPI · LangGraph (human-in-the-loop with durable Postgres checkpoints) · PostgreSQL 17 + pgvector · Microsoft Presidio + spaCy · Docker · uv
+**Stack:** Python 3.12 · FastAPI · LangGraph (human-in-the-loop with durable Postgres checkpoints) · PostgreSQL 17 + pgvector · Microsoft Presidio + spaCy · LangChain · React · Docker · uv
 
 > All data in this repository is synthetic or public: 500 generated doctors across 22 fictional clinics in Pune and Hyderabad, 480,000 appointment slots, and openly licensed datasets. See [`data/README.md`](data/README.md).
 
@@ -31,16 +31,17 @@ MedPal automates the routine parts and keeps humans in charge of every decision 
 | Feature | State |
 |---|---|
 | Triage → shortlist → patient picks a slot → booking (pause/resume across app instances) | ✅ working |
-| Emergency gate with human handoff | ✅ working (placeholder rule list; clinician-signed rule engine planned) |
-| Specialty matching | 🟡 stub (classifier planned) |
+| Emergency gate with human handoff | 🟡 draft rule set working; clinician sign-off still external |
+| Specialty matching | 🟡 deterministic draft matcher; model classifier/evals can replace it |
 | Row-level security for every role, consent with expiry and revocation | ✅ |
 | Presidio de-identification (English, Hinglish, Indian identifiers) | ✅ |
 | Append-only audit, immutable signed notes | ✅ |
-| Records Q&A with citations | ⏳ planned |
-| Consultation scribe with doctor sign-off | ⏳ planned |
-| OIDC login, consent API, front-desk console, tracing | ⏳ planned |
+| Records Q&A with citations | ✅ working with local embeddings and verified citations |
+| Consultation scribe with doctor sign-off | ✅ working API path with immutable signed notes |
+| OIDC login, consent API, front-desk console, tracing | 🟡 OIDC shape, consent API and front-desk APIs working; tracing planned |
+| React app | 🟡 role-aware shell and feature pages working |
 
-**Tests:** 81 unit · 64 data · 27 integration (real Postgres) · lint, type checks and module-boundary contracts.
+**Tests:** 103 unit · 64 data · 34 integration (real Postgres) · 1 frontend · lint, type checks and module-boundary contracts.
 
 ## Quick start
 
@@ -84,6 +85,8 @@ make test-unit   # no Docker needed
 make test-data   # data cleaning and generation checks
 make test-int    # real Postgres; builds a throwaway medpal_test database
 make lint        # ruff, mypy, import-linter module boundaries
+make web-build   # React type-check + production build
+make web-test    # React unit tests
 ```
 
 ## How it works
@@ -105,8 +108,8 @@ services/
   api/          FastAPI app, routers, auth dependency
   agent/        LangGraph graphs (triage/ …)
   scheduling/   shortlist + booking transaction (advisory lock, capacity, idempotency)
-  records/      report ingest + retrieval (planned)
-  scribe/       speech-to-text + audio retention (planned)
+  records/      report ingest, retrieval and cited Q&A
+  scribe/       SOAP draft + doctor sign-off
   platform/     config, db pools + RLS sessions, auth context, audit, phi/ (Presidio)
 data/           transforms for public datasets, synthetic network generator
 infra/          docker-compose, Dockerfile, Alembic migrations, seed script
@@ -120,7 +123,7 @@ The API connects as `medpal_app`, which is **not** a superuser and has no `BYPAS
 
 ## Roadmap
 
-1. Clinician-signed red-flag rule engine and a specialty classifier, with evaluation sets written before the code.
-2. Records Q&A: ingest, self-hosted embeddings, retrieval scoped by row-level security, verified citations.
-3. Consultation scribe with doctor sign-off and stock-aware prescriptions.
-4. OIDC login, consent API, front-desk console, self-hosted tracing.
+1. Replace draft triage rules with clinician-signed rules and larger evaluation sets.
+2. Swap the deterministic local embedding adapter for a production self-hosted multilingual model.
+3. Add production object storage, OCR and speech-to-text adapters.
+4. Add stock-aware prescriptions, retention jobs and self-hosted tracing.

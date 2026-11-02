@@ -63,7 +63,7 @@ fmt:             ## auto-format
 	$(RUN) ruff check . --fix
 	$(RUN) ruff format .
 
-check: lint test-unit test-data  ## what CI runs
+check: lint test-unit test-data web-build web-test  ## what CI runs
 
 data:            ## run all data transforms (needs raw files in data/raw, see data/inventory.md)
 	$(RUN) --group data python -m data.transforms.no_shows

@@ -1,0 +1,26 @@
+services:
+  - type: web
+    name: medpal
+    runtime: docker
+    dockerfilePath: infra/Dockerfile
+    envVars:
+      - key: MEDPAL_ENV
+        value: prod
+      - key: MEDPAL_AUTH_MODE
+        value: oidc
+      - key: MEDPAL_DATABASE_URL
+        sync: false
+      - key: MEDPAL_MIGRATION_DATABASE_URL
+        sync: false
+      - key: MEDPAL_OIDC_ISSUER
+        sync: false
+      - key: MEDPAL_OIDC_AUDIENCE
+        sync: false
+      - key: MEDPAL_OIDC_JWKS_URL
+        sync: false
+      - key: MEDPAL_CHAT_PROVIDER
+        value: gemini
+      - key: MEDPAL_CHAT_MODEL
+        value: gemini-2.5-flash
+      - key: MEDPAL_CHAT_API_KEY
+        sync: false

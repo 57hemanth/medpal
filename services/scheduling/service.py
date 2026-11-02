@@ -76,8 +76,7 @@ CROSS JOIN LATERAL (
       AND NOT (s.slot_id = ANY(%(exclude)s::uuid[]))
       AND (%(city)s::text IS NULL
            OR s.clinic_id IN (SELECT clinic_id FROM clinic WHERE city = %(city)s::text))
-      AND s.capacity > (SELECT count(*) FROM appointment a
-                        WHERE a.slot_id = s.slot_id AND a.status = 'booked')
+      AND s.capacity > app_booked_appointment_count(s.slot_id)
     ORDER BY s.starts_at
     LIMIT 1
 ) f
@@ -123,7 +122,7 @@ async def reserve(
     trace_id: str | None = None,
 ) -> str | None:
     """Book `slot_id` for `patient_id`. Returns the appointment id, or None if the slot is full."""
-    async with pool.connection() as conn, conn.transaction():
+    async with scoped(pool, auth) as conn:
         cur = await conn.execute(
             "SELECT appt_id::text FROM appointment WHERE idempotency_key = %s", (idempotency_key,)
         )
@@ -176,7 +175,7 @@ async def open_handoff(
     thread_id: str | None,
 ) -> str:
     """Put a human-in-the-loop item in the desk/emergency queue."""
-    async with pool.connection() as conn, conn.transaction():
+    async with scoped(pool, auth) as conn:
         cur = await conn.execute(
             """INSERT INTO handoff_ticket (kind, patient_id, reason, thread_id, created_by)
                VALUES (%s, %s, %s, %s, %s) RETURNING ticket_id::text""",
