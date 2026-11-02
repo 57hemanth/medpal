@@ -50,7 +50,7 @@ check_untyped_defs = true
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
 asyncio_default_fixture_loop_scope = "function"
-testpaths = ["tests"]
+testpaths = ["tests", "data/transforms/tests"]
 markers = [
   "integration: needs the docker-compose stack (Postgres, Redis); skipped when unavailable",
 ]
@@ -72,6 +72,10 @@ source_modules = ["services.platform"]
 forbidden_modules = ["services.agent", "services.api", "services.scheduling", "services.records", "services.scribe"]
 
 [dependency-groups]
+data = [
+    "liac-arff>=2.5.0",
+    "pandas>=3.1.0",
+]
 dev = [
     "import-linter>=2.15",
     "mypy>=2.4.1",
