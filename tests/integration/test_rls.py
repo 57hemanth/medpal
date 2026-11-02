@@ -15,6 +15,7 @@ from services.platform.config import get_settings
 from services.platform.db import scoped, scoped_system
 from services.platform.egress import EgressChatClient
 from services.platform.egress.providers import FakeChatModel
+from services.records.consent import grant_consent, list_consents, revoke_consent
 from services.records.qa import answer_question
 from services.records.retrieval import retrieve
 
@@ -361,6 +362,30 @@ async def test_patient_cannot_grant_consent_on_someone_elses_record(pool, record
                 " VALUES (%s, %s, '{records:read}', 'x', %s, now() + interval '1 day')",
                 (w["pb"], w["carer_ok"], w["ua"]),
             )
+
+
+async def test_consent_service_grants_lists_and_revokes(pool, records_world):
+    w = records_world
+    auth = as_(w["ua"], "patient", w["pa"])
+    grantee = _uuid()
+    with psycopg.connect(get_settings().migration_database_url) as conn, conn.transaction():
+        conn.execute("INSERT INTO app_user (user_id, role) VALUES (%s, 'caregiver')", (grantee,))
+
+    grant = await grant_consent(
+        pool,
+        auth,
+        patient_id=w["pa"],
+        grantee_user_id=grantee,
+        scope=["records:read"],
+        purpose="family care",
+        expires_at=datetime.now(UTC) + timedelta(days=7),
+    )
+    listed = await list_consents(pool, auth)
+    revoked = await revoke_consent(pool, auth, consent_id=grant.consent_id)
+
+    assert grant.consent_id in {item.consent_id for item in listed}
+    assert revoked.revoked_at is not None
+    assert await chunk_patients(pool, as_(grantee, "caregiver")) == set()
 
 
 # ---- context hygiene ------------------------------------------------------------------------
