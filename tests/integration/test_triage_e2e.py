@@ -9,16 +9,15 @@ import psycopg
 import pytest
 
 from services.api.main import create_app
-from services.platform.config import get_settings
 
 pytestmark = pytest.mark.integration
 
 
 @pytest.fixture
-def gm_world() -> dict[str, str]:
+def gm_world(admin_url: str) -> dict[str, str]:
     """A fresh General Medicine doctor with the earliest slot, so the stub specialty finds it first."""
     ids = {k: str(uuid.uuid4()) for k in ("clinic", "doctor", "slot", "patient", "user")}
-    with psycopg.connect(get_settings().database_url) as conn, conn.transaction():
+    with psycopg.connect(admin_url) as conn, conn.transaction():
         conn.execute("INSERT INTO specialty (name) VALUES ('General Medicine') ON CONFLICT (name) DO NOTHING")
         spec = conn.execute("SELECT specialty_id FROM specialty WHERE name = 'General Medicine'").fetchone()
         assert spec is not None
@@ -53,7 +52,7 @@ async def _client_call(method_path: str, json: dict, headers: dict) -> httpx.Res
         return await c.post(method_path, json=json, headers=headers)
 
 
-async def test_book_across_two_app_instances(gm_world):
+async def test_book_across_two_app_instances(gm_world, admin_url):
     headers = {
         "X-Dev-User-Id": gm_world["user"],
         "X-Dev-Role": "patient",
@@ -74,7 +73,7 @@ async def test_book_across_two_app_instances(gm_world):
     done = r.json()
     assert done["status"] == "booked"
 
-    with psycopg.connect(get_settings().database_url) as conn:
+    with psycopg.connect(admin_url) as conn:
         appt = conn.execute(
             "SELECT patient_id::text, source FROM appointment WHERE appt_id = %s", (done["booking_id"],)
         ).fetchone()
@@ -86,7 +85,7 @@ async def test_book_across_two_app_instances(gm_world):
     assert audits is not None and audits[0] == 1
 
 
-async def test_emergency_creates_ticket(gm_world):
+async def test_emergency_creates_ticket(gm_world, admin_url):
     headers = {
         "X-Dev-User-Id": gm_world["user"],
         "X-Dev-Role": "patient",
@@ -95,7 +94,7 @@ async def test_emergency_creates_ticket(gm_world):
     r = await _client_call("/triage", {"text": "crushing chest pain since an hour"}, headers)
     body = r.json()
     assert body["status"] == "emergency"
-    with psycopg.connect(get_settings().database_url) as conn:
+    with psycopg.connect(admin_url) as conn:
         row = conn.execute(
             "SELECT kind, status FROM handoff_ticket WHERE ticket_id = %s", (body["handoff_ticket_id"],)
         ).fetchone()

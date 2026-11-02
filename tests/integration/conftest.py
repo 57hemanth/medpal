@@ -1,5 +1,11 @@
 """Integration fixtures: real Postgres from docker-compose, in a separate `<db>_test` database
-so tests never write into the dev data. Skips the whole module if Postgres is unreachable."""
+that is dropped and rebuilt from migrations at the start of every run (hermetic, never touches dev data).
+
+Two connections, on purpose:
+  * `admin_url` (owner role) sets up fixtures and verifies results: it bypasses RLS, like an operator.
+  * the app settings (`medpal_app`, non-superuser) are what the code under test uses: RLS applies.
+Skips the whole module if Postgres is unreachable.
+"""
 
 import os
 import uuid
@@ -18,24 +24,19 @@ from services.platform.db import app_pool
 
 def _with_dbname(url: str, dbname: str) -> str:
     """Return the same postgresql:// URL pointing at another database (URL form, for Alembic too)."""
-    parts = urlsplit(url)
-    return urlunsplit(parts._replace(path=f"/{dbname}"))
+    return urlunsplit(urlsplit(url)._replace(path=f"/{dbname}"))
 
 
-def _test_database_url() -> str:
-    dev_url = get_settings().database_url
-    name = urlsplit(dev_url).path.lstrip("/") or "medpal"
-    return _with_dbname(dev_url, f"{name}_test")
+def _test_name(url: str) -> str:
+    return (urlsplit(url).path.lstrip("/") or "medpal") + "_test"
 
 
-def _ensure_test_database(test_url: str) -> bool:
-    """Create the test database if missing. Returns False when Postgres is unreachable."""
-    test_db = urlsplit(test_url).path.lstrip("/")
+def _recreate_test_database(owner_url: str, test_db: str) -> bool:
+    """Drop and create the test database. Returns False when Postgres is unreachable."""
     try:
-        with psycopg.connect(_with_dbname(test_url, "postgres"), autocommit=True, connect_timeout=2) as conn:
-            exists = conn.execute("SELECT 1 FROM pg_database WHERE datname = %s", (test_db,)).fetchone()
-            if not exists:
-                conn.execute(sql.SQL("CREATE DATABASE {}").format(sql.Identifier(test_db)))
+        with psycopg.connect(_with_dbname(owner_url, "postgres"), autocommit=True, connect_timeout=2) as conn:
+            conn.execute(sql.SQL("DROP DATABASE IF EXISTS {} WITH (FORCE)").format(sql.Identifier(test_db)))
+            conn.execute(sql.SQL("CREATE DATABASE {}").format(sql.Identifier(test_db)))
         return True
     except psycopg.OperationalError:
         return False
@@ -43,12 +44,20 @@ def _ensure_test_database(test_url: str) -> bool:
 
 @pytest.fixture(scope="session", autouse=True)
 def database() -> None:
-    test_url = os.environ.get("MEDPAL_TEST_DATABASE_URL") or _test_database_url()
-    if not _ensure_test_database(test_url):
+    settings = get_settings()
+    test_db = _test_name(settings.migration_database_url)
+    if not _recreate_test_database(settings.migration_database_url, test_db):
         pytest.skip("Postgres not reachable: run `make up` first", allow_module_level=True)
-    os.environ["MEDPAL_DATABASE_URL"] = test_url
+    os.environ["MEDPAL_DATABASE_URL"] = _with_dbname(settings.database_url, test_db)
+    os.environ["MEDPAL_MIGRATION_DATABASE_URL"] = _with_dbname(settings.migration_database_url, test_db)
     get_settings.cache_clear()  # every later get_settings() (app lifespan, pools) sees the test DB
     command.upgrade(Config("alembic.ini"), "head")
+
+
+@pytest.fixture
+def admin_url() -> str:
+    """Owner connection for fixtures and assertions (bypasses RLS). Never what the app uses."""
+    return get_settings().migration_database_url
 
 
 @pytest.fixture
@@ -60,13 +69,13 @@ async def pool():
 
 
 @pytest.fixture
-def world() -> dict[str, str]:
+def world(admin_url: str) -> dict[str, str]:
     """A fresh, isolated clinic/doctor/specialty/patient/user set per test (unique names and ids)."""
     tag = uuid.uuid4().hex[:8]
     ids = {k: str(uuid.uuid4()) for k in ("clinic", "specialty", "doctor", "patient", "user", "slot")}
     ids["specialty_name"] = f"Test Specialty {tag}"
     starts = datetime.now(UTC) + timedelta(days=1)
-    with psycopg.connect(get_settings().database_url) as conn, conn.transaction():
+    with psycopg.connect(admin_url) as conn, conn.transaction():
         conn.execute(
             "INSERT INTO clinic (clinic_id, name, city, district, opens_at, closes_at)"
             " VALUES (%s, %s, 'Pune', 'Pune', '09:00', '18:00')",
