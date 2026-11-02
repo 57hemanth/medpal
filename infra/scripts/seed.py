@@ -49,13 +49,19 @@ def _copy(conn: psycopg.Connection, path: Path, table: str, columns: str) -> int
 
 
 def _identities(conn: psycopg.Connection) -> None:
+    baner = conn.execute("SELECT clinic_id FROM clinic WHERE name = 'Baner Clinic'").fetchone()
     patients = [
-        (PRIYA_PATIENT, "Priya S", "1992-04-11"),
-        (RAVI_PATIENT, "Ravi K", "1985-09-02"),
-        (MOTHER_PATIENT, "Sunita S", "1963-07-21"),  # Priya's mother: the caregiver scenario
+        # (id, name, dob, city, language, preferred clinic)
+        (PRIYA_PATIENT, "Priya S", "1992-04-11", "Pune", "en", baner[0] if baner else None),
+        (RAVI_PATIENT, "Ravi K", "1985-09-02", "Hyderabad", "te", None),
+        (MOTHER_PATIENT, "Sunita S", "1963-07-21", "Pune", "mr", None),  # Priya's mother: caregiver scenario
     ]
-    for pid, name, dob in patients:
-        conn.execute("INSERT INTO patient (patient_id, name, dob) VALUES (%s, %s, %s)", (pid, name, dob))
+    for pid, name, dob, city, lang, clinic in patients:
+        conn.execute(
+            "INSERT INTO patient (patient_id, name, dob, city, language, preferred_clinic_id)"
+            " VALUES (%s, %s, %s, %s, %s, %s)",
+            (pid, name, dob, city, lang, clinic),
+        )
     for uid, pid in ((PRIYA_USER, PRIYA_PATIENT), (RAVI_USER, RAVI_PATIENT), (MOTHER_USER, MOTHER_PATIENT)):
         conn.execute(
             "INSERT INTO app_user (user_id, role, patient_id) VALUES (%s, 'patient', %s)", (uid, pid)

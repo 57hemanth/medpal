@@ -11,7 +11,8 @@ class CandidateView(TypedDict):
     doctor_name: str
     slot_id: str
     clinic_name: str
-    starts_at: str  # ISO 8601; state must stay JSON-serialisable for the checkpointer
+    starts_at: str  # ISO 8601 in clinic local time (IST); state must stay JSON-serialisable
+    display_time: str  # what the patient reads, e.g. "Mon 9 Nov, 08:00"
 
 
 class TriageState(TypedDict, total=False):

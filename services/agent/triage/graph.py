@@ -57,7 +57,9 @@ _STUB_RED_FLAG_PHRASES = {
 class TriageTools(Protocol):
     """Tools the graph may use. Implemented over Postgres in tools.py; faked in unit tests."""
 
-    def shortlist(self, specialty: str, exclude_slot_ids: list[str]) -> Awaitable[list[CandidateView]]: ...
+    def shortlist(
+        self, auth: AuthContext, specialty: str, exclude_slot_ids: list[str]
+    ) -> Awaitable[list[CandidateView]]: ...
 
     def reserve(
         self, auth: AuthContext, *, slot_id: str, patient_id: str, idempotency_key: str, thread_id: str
@@ -103,7 +105,7 @@ def build_triage_graph(tools: TriageTools) -> StateGraph:
 
     async def shortlist(state: TriageState) -> TriageState:
         specialty = state.get("specialty") or "General Medicine"
-        candidates = await tools.shortlist(specialty, state.get("excluded_slot_ids", []))
+        candidates = await tools.shortlist(state["auth"], specialty, state.get("excluded_slot_ids", []))
         return {"candidates": candidates, "chosen_slot_id": None}
 
     async def present_options(state: TriageState) -> TriageState:
@@ -140,7 +142,7 @@ def build_triage_graph(tools: TriageTools) -> StateGraph:
     async def notify(state: TriageState) -> TriageState:
         # SMS through the egress adapter lands in T4.4 (fixed template, no clinical content).
         chosen = next(c for c in state["candidates"] if c["slot_id"] == state["chosen_slot_id"])
-        reply = f"Booked with {chosen['doctor_name']} at {chosen['clinic_name']}, {chosen['starts_at']}."
+        reply = f"Booked with {chosen['doctor_name']} at {chosen['clinic_name']} on {chosen['display_time']}."
         return {"outcome": "booked", "reply": reply}
 
     async def front_desk_handoff(state: TriageState, config: RunnableConfig) -> TriageState:

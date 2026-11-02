@@ -15,6 +15,7 @@ from psycopg_pool import AsyncConnectionPool
 
 from services.platform import audit
 from services.platform.auth import AuthContext
+from services.platform.db import scoped
 
 Row = dict[str, Any]  # pools use psycopg's dict_row factory (services.platform.db)
 
@@ -28,6 +29,27 @@ async def _all(cur: AsyncCursor[Any]) -> list[Row]:
 
 
 @dataclass(frozen=True)
+class PatientPreferences:
+    city: str | None = None
+    language: str | None = None
+    preferred_clinic_id: str | None = None
+
+
+async def patient_preferences(
+    pool: AsyncConnectionPool, auth: AuthContext, patient_id: str
+) -> PatientPreferences:
+    """Read the acting patient's location and language, as the caller (RLS: only rows they may see)."""
+    async with scoped(pool, auth) as conn:
+        cur = await conn.execute(
+            "SELECT city, language, preferred_clinic_id::text AS preferred_clinic_id FROM patient"
+            " WHERE patient_id = %s",
+            (patient_id,),
+        )
+        row = await _one(cur)
+    return PatientPreferences(**row) if row else PatientPreferences()
+
+
+@dataclass(frozen=True)
 class Candidate:
     doctor_id: str
     doctor_name: str
@@ -36,7 +58,8 @@ class Candidate:
     starts_at: datetime
 
 
-# Earliest free slot per doctor for a specialty, soonest first.
+# Earliest free slot per doctor for a specialty, ranked per task card T10:
+#   same city as the patient (filter) → doctor speaks the patient's language → preferred clinic → soonest.
 # Shape matters at 480k slots: the LATERAL ... LIMIT 1 lets each doctor's (doctor_id, starts_at) index scan
 # stop at the first free slot, so cost grows with how booked-up doctors are, not with the calendar size.
 # Measured with 6,200 bookings: 4.5 ms vs 60 ms for a DISTINCT ON over every future slot.
@@ -51,25 +74,41 @@ CROSS JOIN LATERAL (
     WHERE s.doctor_id = d.doctor_id
       AND s.starts_at > now()
       AND NOT (s.slot_id = ANY(%(exclude)s::uuid[]))
+      AND (%(city)s::text IS NULL
+           OR s.clinic_id IN (SELECT clinic_id FROM clinic WHERE city = %(city)s::text))
       AND s.capacity > (SELECT count(*) FROM appointment a
                         WHERE a.slot_id = s.slot_id AND a.status = 'booked')
     ORDER BY s.starts_at
     LIMIT 1
 ) f
 JOIN clinic c ON c.clinic_id = f.clinic_id
-ORDER BY f.starts_at, d.doctor_id
+ORDER BY COALESCE(%(language)s::text = ANY (d.languages), false) DESC,
+         COALESCE(f.clinic_id = %(preferred)s::uuid, false) DESC,
+         f.starts_at,
+         d.doctor_id
 LIMIT %(limit)s
 """
 
 
 async def shortlist(
-    pool: AsyncConnectionPool, specialty: str, *, limit: int = 3, exclude_slot_ids: list[str] | None = None
+    pool: AsyncConnectionPool,
+    specialty: str,
+    *,
+    limit: int = 3,
+    exclude_slot_ids: list[str] | None = None,
+    preferences: PatientPreferences | None = None,
 ) -> list[Candidate]:
+    prefs = preferences or PatientPreferences()
+    params = {
+        "specialty": specialty,
+        "exclude": exclude_slot_ids or [],
+        "limit": limit,
+        "city": prefs.city,
+        "language": prefs.language,
+        "preferred": prefs.preferred_clinic_id,
+    }
     async with pool.connection() as conn:
-        cur = await conn.execute(
-            _SHORTLIST, {"specialty": specialty, "exclude": exclude_slot_ids or [], "limit": limit}
-        )
-        rows = await _all(cur)
+        rows = await _all(await conn.execute(_SHORTLIST, params))
     return [Candidate(**r) for r in rows]
 
 
