@@ -40,7 +40,7 @@ ignore = ["S101"]  # asserts are fine in tests
 
 [tool.ruff.lint.per-file-ignores]
 "tests/**" = ["S"]
-"infra/migrations/**" = ["E501"]
+"infra/migrations/**" = ["E501", "S608"]  # DDL built from module constants, not user input
 
 [tool.mypy]
 python_version = "3.12"
