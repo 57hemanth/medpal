@@ -18,6 +18,7 @@ from services.platform.egress.providers import FakeChatModel
 from services.records.consent import grant_consent, list_consents, revoke_consent
 from services.records.qa import answer_question
 from services.records.retrieval import retrieve
+from services.scribe.service import SoapDraft, sign_note
 
 pytestmark = pytest.mark.integration
 
@@ -424,3 +425,44 @@ def test_signed_notes_are_immutable_even_for_the_owner(admin_url, records_world)
         conn.rollback()
         with pytest.raises(psycopg.errors.RaiseException, match="immutable"):
             conn.execute("DELETE FROM note_version WHERE note_id = %s", (note_id,))
+
+
+async def test_doctor_signs_note_atomically_with_audit(pool, records_world):
+    w = records_world
+    encounter_id = _uuid()
+    with psycopg.connect(get_settings().migration_database_url) as conn, conn.transaction():
+        conn.execute(
+            "INSERT INTO encounter (encounter_id, appt_id, patient_id, doctor_id) VALUES (%s, %s, %s, %s)",
+            (encounter_id, w["appt"], w["pa"], w["doctor"]),
+        )
+    draft = SoapDraft(
+        subjective="Knee pain",
+        objective="No swelling",
+        assessment="Sprain",
+        plan="Rest and review",
+        medicines=[],
+    )
+
+    signed = await sign_note(
+        pool,
+        as_(w["doc_user"], "doctor"),
+        encounter_id=encounter_id,
+        draft=draft,
+        edited_soap=draft.model_dump(),
+    )
+
+    async with scoped(pool, as_(w["doc_user"], "doctor")) as conn:
+        note = await (
+            await conn.execute(
+                "SELECT content_hash FROM note_version WHERE note_id = %s",
+                (signed.note_id,),
+            )
+        ).fetchone()
+        audit_row = await (
+            await conn.execute(
+                "SELECT count(*) AS n FROM audit_event WHERE resource = 'note_version' AND record_id = %s",
+                (signed.note_id,),
+            )
+        ).fetchone()
+    assert note["content_hash"] == signed.content_hash  # type: ignore[index]
+    assert audit_row["n"] == 1  # type: ignore[index]
