@@ -1,5 +1,5 @@
-from typing import Annotated, Literal, TypedDict
 import operator
+from typing import Annotated, Literal, TypedDict
 
 from services.platform.auth import AuthContext
 

@@ -27,6 +27,7 @@ package = false
 [tool.ruff]
 line-length = 110
 target-version = "py312"
+extend-exclude = ["docs"]  # markdown code samples are illustrative, not formatted code
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "B", "UP", "ASYNC", "S", "SIM"]

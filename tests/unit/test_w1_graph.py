@@ -12,8 +12,13 @@ PRIYA: AuthContext = {"user_id": "u-priya", "role": "patient", "acting_for_patie
 
 
 def cand(slot: str, doctor: str = "d1") -> CandidateView:
-    return CandidateView(doctor_id=doctor, doctor_name=f"Dr {doctor}", slot_id=slot,
-                         clinic_name="Baner", starts_at="2026-11-03T10:00:00+05:30")
+    return CandidateView(
+        doctor_id=doctor,
+        doctor_name=f"Dr {doctor}",
+        slot_id=slot,
+        clinic_name="Baner",
+        starts_at="2026-11-03T10:00:00+05:30",
+    )
 
 
 class FakeDeps:
@@ -60,8 +65,9 @@ async def test_red_flag_ends_in_emergency_handoff_without_booking():
     assert out["outcome"] == "emergency"
     assert out["reply"] == EMERGENCY_REPLY
     assert "__interrupt__" not in out
-    assert deps.handoffs == [{"kind": "emergency", "patient_id": "p-priya",
-                              "reason": "stub_breathless,stub_chest_pain"}]
+    assert deps.handoffs == [
+        {"kind": "emergency", "patient_id": "p-priya", "reason": "stub_breathless,stub_chest_pain"}
+    ]
     assert deps.shortlist_calls == 0 and deps.bookings == {}
 
 
@@ -86,7 +92,8 @@ async def test_choice_outside_offered_slots_is_rejected_and_asked_again():
     graph = app(deps)
     await start(graph, "Knee pain")
 
-    again = await graph.ainvoke(Command(resume={"slot_id": "someone-elses-slot", "idempotency_key": "k"}), cfg())
+    bad_choice = {"slot_id": "someone-elses-slot", "idempotency_key": "k"}
+    again = await graph.ainvoke(Command(resume=bad_choice), cfg())
     assert "__interrupt__" in again
     assert deps.bookings == {}
 

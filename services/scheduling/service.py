@@ -8,11 +8,23 @@ Booking contract (ADR-10):
 
 from dataclasses import dataclass
 from datetime import datetime
+from typing import Any, cast
 
+from psycopg import AsyncCursor
 from psycopg_pool import AsyncConnectionPool
 
 from services.platform import audit
 from services.platform.auth import AuthContext
+
+Row = dict[str, Any]  # pools use psycopg's dict_row factory (services.platform.db)
+
+
+async def _one(cur: AsyncCursor[Any]) -> Row | None:
+    return cast(Row | None, await cur.fetchone())
+
+
+async def _all(cur: AsyncCursor[Any]) -> list[Row]:
+    return cast(list[Row], await cur.fetchall())
 
 
 @dataclass(frozen=True)
@@ -46,9 +58,9 @@ async def shortlist(
 ) -> list[Candidate]:
     async with pool.connection() as conn:
         cur = await conn.execute(_SHORTLIST, {"specialty": specialty, "exclude": exclude_slot_ids or []})
-        rows = await cur.fetchall()
-    ranked = sorted(rows, key=lambda r: r["starts_at"])[:limit]  # type: ignore[index]
-    return [Candidate(**r) for r in ranked]  # type: ignore[arg-type]
+        rows = await _all(cur)
+    ranked = sorted(rows, key=lambda r: r["starts_at"])[:limit]
+    return [Candidate(**r) for r in ranked]
 
 
 async def reserve(
@@ -66,19 +78,19 @@ async def reserve(
         cur = await conn.execute(
             "SELECT appt_id::text FROM appointment WHERE idempotency_key = %s", (idempotency_key,)
         )
-        existing = await cur.fetchone()
+        existing = await _one(cur)
         if existing:
-            return existing["appt_id"]  # type: ignore[call-overload,no-any-return]
+            return str(existing["appt_id"])
 
         cur = await conn.execute("SELECT capacity FROM slot WHERE slot_id = %s FOR UPDATE", (slot_id,))
-        slot = await cur.fetchone()
+        slot = await _one(cur)
         if slot is None:
             return None
         cur = await conn.execute(
             "SELECT count(*) AS n FROM appointment WHERE slot_id = %s AND status = 'booked'", (slot_id,)
         )
-        booked = await cur.fetchone()
-        if booked["n"] >= slot["capacity"]:  # type: ignore[index]
+        booked = await _one(cur)
+        if booked is not None and booked["n"] >= slot["capacity"]:
             return None
 
         cur = await conn.execute(
@@ -86,11 +98,18 @@ async def reserve(
                VALUES (%s, %s, 'booked', %s, %s, %s) RETURNING appt_id::text""",
             (patient_id, slot_id, source, idempotency_key, auth["user_id"]),
         )
-        appt = await cur.fetchone()
-        appt_id: str = appt["appt_id"]  # type: ignore[index]
+        appt = await _one(cur)
+        assert appt is not None
+        appt_id = str(appt["appt_id"])
         await audit.write(
-            conn, auth, action="write", resource="appointment", record_id=appt_id,
-            patient_id=patient_id, purpose="booking", trace_id=trace_id,
+            conn,
+            auth,
+            action="write",
+            resource="appointment",
+            record_id=appt_id,
+            patient_id=patient_id,
+            purpose="booking",
+            trace_id=trace_id,
         )
         return appt_id
 
@@ -111,10 +130,16 @@ async def open_handoff(
                VALUES (%s, %s, %s, %s, %s) RETURNING ticket_id::text""",
             (kind, patient_id, reason, thread_id, auth["user_id"]),
         )
-        row = await cur.fetchone()
-        ticket_id: str = row["ticket_id"]  # type: ignore[index]
+        row = await _one(cur)
+        assert row is not None
+        ticket_id = str(row["ticket_id"])
         await audit.write(
-            conn, auth, action="write", resource="handoff_ticket", record_id=ticket_id,
-            patient_id=patient_id, purpose=f"handoff:{kind}",
+            conn,
+            auth,
+            action="write",
+            resource="handoff_ticket",
+            record_id=ticket_id,
+            patient_id=patient_id,
+            purpose=f"handoff:{kind}",
         )
         return ticket_id

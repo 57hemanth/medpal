@@ -89,8 +89,11 @@ def build_w1(deps: W1Deps) -> StateGraph:
     async def emergency_handoff(state: W1State, config: RunnableConfig) -> W1State:
         auth = state["auth"]
         ticket = await deps.open_handoff(
-            auth, kind="emergency", patient_id=auth["acting_for_patient_id"],
-            reason=",".join(state["red_flags"]), thread_id=_thread_id(config),
+            auth,
+            kind="emergency",
+            patient_id=auth["acting_for_patient_id"],
+            reason=",".join(state["red_flags"]),
+            thread_id=_thread_id(config),
         )
         return {"handoff_ticket_id": ticket, "outcome": "emergency", "reply": EMERGENCY_REPLY}
 
@@ -117,16 +120,20 @@ def build_w1(deps: W1Deps) -> StateGraph:
     async def book(state: W1State, config: RunnableConfig) -> W1State:
         auth = state["auth"]
         patient_id = auth["acting_for_patient_id"]
-        assert patient_id, "API must resolve the acting patient before the run starts"
+        slot_id, key = state.get("chosen_slot_id"), state.get("idempotency_key")
+        # Real checks, not asserts: asserts vanish under `python -O`.
+        if not patient_id:
+            raise RuntimeError("API must resolve the acting patient before the run starts")
+        if not slot_id or not key:
+            raise RuntimeError("book reached without a validated slot choice")
         booking = await deps.reserve(
-            auth, slot_id=state["chosen_slot_id"], patient_id=patient_id,  # type: ignore[arg-type]
-            idempotency_key=state["idempotency_key"], thread_id=_thread_id(config),  # type: ignore[arg-type]
+            auth, slot_id=slot_id, patient_id=patient_id, idempotency_key=key, thread_id=_thread_id(config)
         )
         if booking:
             return {"booking_id": booking}
         return {
             "booking_id": None,
-            "excluded_slot_ids": [*state.get("excluded_slot_ids", []), state["chosen_slot_id"]],  # type: ignore[list-item]
+            "excluded_slot_ids": [*state.get("excluded_slot_ids", []), slot_id],
             "reoffer_count": state.get("reoffer_count", 0) + 1,
         }
 
@@ -140,8 +147,11 @@ def build_w1(deps: W1Deps) -> StateGraph:
         auth = state["auth"]
         reason = "no_slots" if not state.get("candidates") else "too_many_reoffers"
         ticket = await deps.open_handoff(
-            auth, kind="front_desk", patient_id=auth["acting_for_patient_id"],
-            reason=reason, thread_id=_thread_id(config),
+            auth,
+            kind="front_desk",
+            patient_id=auth["acting_for_patient_id"],
+            reason=reason,
+            thread_id=_thread_id(config),
         )
         return {"handoff_ticket_id": ticket, "outcome": "front_desk", "reply": FRONT_DESK_REPLY}
 
@@ -161,12 +171,15 @@ def build_w1(deps: W1Deps) -> StateGraph:
         return "shortlist" if state.get("reoffer_count", 0) < MAX_REOFFERS else "front_desk_handoff"
 
     g = StateGraph(W1State)
-    for name, fn in [
-        ("intake", intake), ("red_flag_rules", red_flag_rules), ("emergency_handoff", emergency_handoff),
-        ("match_specialty", match_specialty), ("shortlist", shortlist), ("present_options", present_options),
-        ("book", book), ("notify", notify), ("front_desk_handoff", front_desk_handoff),
-    ]:
-        g.add_node(name, fn)
+    g.add_node("intake", intake)
+    g.add_node("red_flag_rules", red_flag_rules)
+    g.add_node("emergency_handoff", emergency_handoff)
+    g.add_node("match_specialty", match_specialty)
+    g.add_node("shortlist", shortlist)
+    g.add_node("present_options", present_options)
+    g.add_node("book", book)
+    g.add_node("notify", notify)
+    g.add_node("front_desk_handoff", front_desk_handoff)
 
     g.add_edge(START, "intake")
     g.add_edge("intake", "red_flag_rules")

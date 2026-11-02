@@ -16,8 +16,11 @@ class PgW1Deps:
         rows = await scheduling.shortlist(self._pool, specialty, exclude_slot_ids=exclude_slot_ids)
         return [
             CandidateView(
-                doctor_id=c.doctor_id, doctor_name=c.doctor_name, slot_id=c.slot_id,
-                clinic_name=c.clinic_name, starts_at=c.starts_at.isoformat(),
+                doctor_id=c.doctor_id,
+                doctor_name=c.doctor_name,
+                slot_id=c.slot_id,
+                clinic_name=c.clinic_name,
+                starts_at=c.starts_at.isoformat(),
             )
             for c in rows
         ]
@@ -26,8 +29,12 @@ class PgW1Deps:
         self, auth: AuthContext, *, slot_id: str, patient_id: str, idempotency_key: str, thread_id: str
     ) -> str | None:
         return await scheduling.reserve(
-            self._pool, auth, slot_id=slot_id, patient_id=patient_id,
-            idempotency_key=idempotency_key, trace_id=thread_id,
+            self._pool,
+            auth,
+            slot_id=slot_id,
+            patient_id=patient_id,
+            idempotency_key=idempotency_key,
+            trace_id=thread_id,
         )
 
     async def open_handoff(
