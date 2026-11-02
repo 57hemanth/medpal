@@ -1,0 +1,78 @@
+# Privacy and compliance
+
+MedPal handles health data, so privacy is designed in, not added on. This page maps each obligation to the control that meets it and the test that proves it. **A control without a test doesn't count as done.**
+
+**Status:** ✅ built and tested · 🟡 partly built · ⏳ planned
+
+> **Legal note.** Rows that mention India's Digital Personal Data Protection (DPDP) Act 2023 and its Rules paraphrase them at a high level. Exact obligations, such as breach-notice timelines or log-retention periods, should be confirmed with counsel before any real deployment. This is an engineering project, not legal advice.
+
+## 1. Data residency and what may leave
+
+| Obligation | Control | Proof | Status |
+|---|---|---|---|
+| Identified health data stays inside the deployment boundary | Identified data is stored and processed in-boundary; only de-identified text may leave | Architecture ([§4](architecture.md#4-what-may-leave-the-boundary-de-identification)) | 🟡 de-identification ✅, egress adapter ⏳ |
+| Only de-identified text reaches an external LLM | Microsoft Presidio with India recognisers; reversible token map kept in-boundary ([ADR-0006](adr/0006-presidio-deidentification.md)) | `tests/unit/test_phi_scrubber.py` (66 cases) | ✅ |
+| Fail closed if anything slips through | Independent second pass `assert_clean()` raises `EgressBlocked` | `test_assert_clean_blocks_a_leftover_identifier` | ✅ |
+| Indian identifiers are recognised | Presidio built-ins (Aadhaar, PAN, voter ID, passport, vehicle) plus custom (mobile, ABHA number and address, MRN, labelled DOB, pincode with context) | Parametrised identifier tests | ✅ |
+| Names are caught in lowercase and Hinglish text | Per-request known identities, a common-names list, "naam X" cues; spaCy NER switched off for Hinglish | `test_names_do_not_leak` (40 cases) | ✅ |
+| Scrubbing doesn't destroy clinical meaning | Over-scrub guards; dates and lab values kept; overlaps resolved by severity | `test_clinical_text_is_unchanged` | ✅ |
+| Embeddings don't become a hidden way out | Self-hosted embedding model ([ADR-0007](adr/0007-exact-vector-search-per-patient.md)) | — | ⏳ |
+| Traces and logs don't leak data | Self-hosted tracing; no request bodies in logs | — | ⏳ |
+| Consultation audio (a voice is identifying) stays in-boundary | Local speech-to-text | — | ⏳ |
+
+## 2. Identifiers with special restrictions
+
+| Obligation | Control | Proof | Status |
+|---|---|---|---|
+| Aadhaar numbers must not be stored | Detected (Verhoeff checksum) and **blocked**, not tokenised, because a reversible map would be storage | `test_valid_aadhaar_is_blocked_not_tokenised` | 🟡 detection ✅, wired into upload and chat intake ⏳ |
+| ABHA (national health ID) handled as a direct identifier | `patient.abha_id`; tokenised on egress | Identifier tests | ✅ |
+
+## 3. Consent and purpose
+
+| Obligation | Control | Proof | Status |
+|---|---|---|---|
+| Consent is specific, time-bound and revocable | `consent` row with grantee, scope, purpose, expiry and `revoked_at`; a column grant lets the patient revoke but never extend | `test_caregiver_needs_valid_unrevoked_consent`, `test_patient_can_revoke_but_not_extend_consent` | 🟡 database rules ✅, consent API ⏳ |
+| Consent is checked on every read, by the database | Row-level security through one scope function ([ADR-0003](adr/0003-row-level-security.md)) | `tests/integration/test_rls.py`: queries omit the app filter | ✅ |
+| Only the patient can grant consent on their own record | Insert policy on `consent` | `test_patient_cannot_grant_consent_on_someone_elses_record` | ✅ |
+| Purpose recorded for every access | `audit_event.purpose` is NOT NULL | Schema | ✅ |
+| Guardian consent for minors and dependants | — | — | ⏳ needs legal input |
+
+## 4. Access control and audit
+
+| Obligation | Control | Proof | Status |
+|---|---|---|---|
+| The application cannot bypass row-level security | App connects as `medpal_app` (NOSUPERUSER, NOBYPASSRLS); the owner role is used only for migrations | `test_app_role_cannot_bypass_rls` | ✅ |
+| Least privilege per role | Access matrix as RLS policies plus verb and column grants | Per-role RLS tests (patient, caregiver, doctor, desk, compliance, system) | 🟡 clinical and identity tables ✅, appointments ⏳ |
+| No identity leaks between requests on pooled connections | Identity set with transaction-local scope | `test_context_does_not_leak_across_pooled_connections` | ✅ |
+| Identities come from authentication, never from model output | `AuthContext` injected into graph state; tools ignore ids supplied by the model | Triage graph and API tests | 🟡 dev headers ✅, OIDC ⏳ |
+| A user can't act on someone else's run | Thread-ownership check on resume | `test_cannot_resume_someone_elses_thread` | ✅ |
+| Dev authentication can never run in production | Settings validator refuses `auth_mode=dev` when `env=prod` | Config validator | ✅ |
+| Every write is audited | `audit.write` in the same transaction as the write | `test_booking_writes_audit_event` | ✅ |
+| Every read of a record is audited | One audit row per document read | — | ⏳ with records Q&A |
+| The audit trail can't be altered | No UPDATE/DELETE grant, plus a trigger that blocks the owner too | `test_audit_event_is_append_only` | ✅ |
+
+## 5. Human oversight
+
+| Obligation | Control | Proof | Status |
+|---|---|---|---|
+| The assistant never diagnoses | A red-flag gate runs before any matching; diagnosis and dose questions hand off | Triage tests | 🟡 gate is a placeholder rule list; rule engine ⏳ |
+| Emergencies reach a human | An emergency handoff ticket, with fixed guidance to the patient | `test_emergency_creates_ticket` | ✅ |
+| The patient chooses the slot | Booking only after the patient picks, validated against the slots offered | `test_choice_outside_offered_slots_is_rejected_and_asked_again` | ✅ |
+| Nothing auto-signs a clinical note | Signed notes are immutable (trigger, even for the owner); only the encounter's doctor may insert | `test_signed_notes_are_immutable_even_for_the_owner` | 🟡 database ✅, scribe sign-off flow ⏳ |
+| Software never substitutes medicines | `prescription.substitute_ok` set only by a named human | Schema | 🟡 |
+
+## 6. Retention
+
+| Obligation | Control | Status |
+|---|---|---|
+| Consultation audio deleted within 24 hours, and the deletion audited | Scheduled job plus object-store lifecycle rule | ⏳ |
+| Checkpoints (they contain PHI) are not kept indefinitely | Retention job; state kept lean (~12.8 KB per triage run, measured) | ⏳ |
+| Erasure on request | Cascading delete of a patient's documents, with an audit event | ⏳ |
+
+## 7. Security hygiene
+
+| Obligation | Control | Status |
+|---|---|---|
+| No secrets in the repository | `.env` gitignored; only `.env.example` committed | ✅ |
+| AI coding assistants never see identified data | Development uses only the synthetic generated layer | ✅ |
+| Prompt injection can't cross patient scope | Scope enforced in SQL and RLS; injected-document tests | ⏳ with records Q&A |
