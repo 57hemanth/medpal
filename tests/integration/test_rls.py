@@ -13,6 +13,10 @@ import pytest
 from services.platform.auth import AuthContext
 from services.platform.config import get_settings
 from services.platform.db import scoped, scoped_system
+from services.platform.egress import EgressChatClient
+from services.platform.egress.providers import FakeChatModel
+from services.records.qa import answer_question
+from services.records.retrieval import retrieve
 
 pytestmark = pytest.mark.integration
 
@@ -197,6 +201,44 @@ async def test_caregiver_needs_valid_unrevoked_consent(pool, records_world, care
 async def test_doctor_sees_only_treated_patients(pool, records_world):
     w = records_world
     assert await chunk_patients(pool, as_(w["doc_user"], "doctor")) == {w["pa"]}
+
+
+async def test_records_retrieval_is_rls_scoped(pool, records_world):
+    w = records_world
+    chunks = await retrieve(pool, as_(w["ua"], "patient", w["pa"]), question="LDL")
+
+    assert chunks
+    assert {chunk.patient_id for chunk in chunks} == {w["pa"]}
+
+
+async def test_records_qa_requires_verified_citations_and_audits_reads(pool, records_world):
+    w = records_world
+    auth = as_(w["ua"], "patient", w["pa"])
+    chat = EgressChatClient(
+        FakeChatModel(structured={"answer": "Your LDL was 162 mg/dL.", "citation_ids": ["C1"]})
+    )
+
+    answer = await answer_question(pool, chat, auth, question="LDL")
+
+    assert answer.status == "answered"
+    assert len(answer.citations) == 1
+    async with scoped(pool, auth) as conn:
+        row = await (
+            await conn.execute(
+                "SELECT count(*) AS n FROM audit_event WHERE action = 'read' AND resource = 'document'"
+            )
+        ).fetchone()
+    assert row["n"] == 1  # type: ignore[index]
+
+
+async def test_records_qa_rejects_unretrieved_citations(pool, records_world):
+    w = records_world
+    chat = EgressChatClient(FakeChatModel(structured={"answer": "Looks fine.", "citation_ids": ["made-up"]}))
+
+    answer = await answer_question(pool, chat, as_(w["ua"], "patient", w["pa"]), question="LDL")
+
+    assert answer.status == "insufficient_evidence"
+    assert answer.citations == []
 
 
 @pytest.mark.parametrize("role", ["desk", "compliance"])

@@ -8,6 +8,7 @@ from pydantic import BaseModel
 from services.api.deps import auth_ctx
 from services.platform.auth import AuthContext
 from services.records.ingest import UploadRejected
+from services.records.qa import answer_question
 from services.records.service import ingest_record, list_records, upload_record
 
 router = APIRouter(prefix="/api/records", tags=["records"])
@@ -31,6 +32,23 @@ class RecordOut(BaseModel):
     phi_status: str
     status: str | None = None
     error: str | None = None
+
+
+class QuestionIn(BaseModel):
+    question: str
+
+
+class CitationOut(BaseModel):
+    chunk_id: str
+    doc_id: str
+    page: int
+    text: str
+
+
+class AnswerOut(BaseModel):
+    status: str
+    answer: str
+    citations: list[CitationOut]
 
 
 @router.post("", response_model=UploadOut, status_code=status.HTTP_201_CREATED)
@@ -66,3 +84,21 @@ async def upload(
 @router.get("", response_model=list[RecordOut])
 async def records(request: Request, auth: Auth) -> list[RecordOut]:
     return [RecordOut(**row) for row in await list_records(request.app.state.app_pool, auth)]
+
+
+@router.post("/questions", response_model=AnswerOut)
+async def question(body: QuestionIn, request: Request, auth: Auth) -> AnswerOut:
+    result = await answer_question(
+        request.app.state.app_pool,
+        request.app.state.chat_client,
+        auth,
+        question=body.question,
+    )
+    return AnswerOut(
+        status=result.status,
+        answer=result.answer,
+        citations=[
+            CitationOut(chunk_id=c.chunk_id, doc_id=c.doc_id, page=c.page, text=c.text)
+            for c in result.citations
+        ],
+    )

@@ -11,6 +11,7 @@ from services.platform import audit
 from services.platform.auth import AuthContext
 from services.platform.db import scoped, scoped_system
 
+from .embedding import embed_text, pgvector_literal
 from .ingest import chunk_text, extract_text, validate_upload
 from .storage import ObjectStore
 
@@ -98,8 +99,9 @@ async def ingest_record(pool: AsyncConnectionPool, store: ObjectStore, *, doc_id
             return extracted.status
         for ordinal, chunk in enumerate(chunk_text(extracted.text)):
             await conn.execute(
-                "INSERT INTO doc_chunk (doc_id, patient_id, page, ordinal, text) VALUES (%s, %s, 1, %s, %s)",
-                (doc["doc_id"], doc["patient_id"], ordinal, chunk),
+                "INSERT INTO doc_chunk (doc_id, patient_id, page, ordinal, text, embedding)"
+                " VALUES (%s, %s, 1, %s, %s, %s::vector)",
+                (doc["doc_id"], doc["patient_id"], ordinal, chunk, pgvector_literal(embed_text(chunk))),
             )
         await conn.execute("UPDATE document SET phi_status = 'tagged' WHERE doc_id = %s", (doc_id,))
         await conn.execute(

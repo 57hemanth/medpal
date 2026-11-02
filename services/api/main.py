@@ -12,6 +12,7 @@ from services.agent.triage.tools import PgTriageTools
 from services.api.routers import records, triage
 from services.platform.config import get_settings
 from services.platform.db import app_pool, checkpoint_pool
+from services.platform.egress import EgressChatClient, build_chat_model
 from services.records.storage import MemoryObjectStore
 
 
@@ -26,6 +27,7 @@ async def _postgres_lifespan(app: FastAPI) -> AsyncIterator[None]:
         await saver.setup()  # idempotent; creates checkpoint tables in the langgraph schema
         app.state.app_pool = pool
         app.state.object_store = MemoryObjectStore(settings.object_store_bucket)
+        app.state.chat_client = EgressChatClient(build_chat_model(settings))
         app.state.triage_graph = build_triage_graph(PgTriageTools(pool)).compile(checkpointer=saver)
         yield
     finally:
