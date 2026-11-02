@@ -1,0 +1,25 @@
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+*.egg-info/
+.coverage
+htmlcov/
+
+# Env / secrets
+.env
+.env.*
+!.env.example
+
+# Data: raw downloads and generated outputs are reproducible, never committed
+data/raw/
+data/synthetic/output/
+evals/runs/*.tmp
+
+# OS / editors
+.DS_Store
+.idea/
+.vscode/
