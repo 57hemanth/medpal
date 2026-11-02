@@ -1,7 +1,7 @@
-"""Small, idempotent dev dataset for slice 0. Fixed UUIDs, so the dev auth headers are stable.
+"""Small, idempotent dataset for local development. Fixed UUIDs, so the dev auth headers are stable.
 
 This is NOT the generated layer (plan T2.6: 500 doctors, ~480k slots). It is just enough for
-the W1 path: 1 hospital, 1 clinic, 2 specialties, 3 doctors, 3 days of slots, 2 patients.
+the triage and booking flow: 1 hospital, 1 clinic, 2 specialties, 3 doctors, 3 days of slots, 2 patients.
 
     uv run python -m infra.scripts.dev_seed
 """
@@ -46,7 +46,8 @@ def slot_times(days: int = 3) -> list[datetime]:
 
 
 def main() -> None:
-    with psycopg.connect(get_settings().database_url) as conn, conn.transaction():
+    # Seeding reference data is an admin task: it runs as the owner role, not the app role.
+    with psycopg.connect(get_settings().migration_database_url) as conn, conn.transaction():
         conn.execute(
             "INSERT INTO hospital (hospital_id, name, city) VALUES (%s, 'MedPal Baner Hospital', 'Pune')"
             " ON CONFLICT DO NOTHING",

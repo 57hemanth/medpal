@@ -10,7 +10,9 @@ services:
       POSTGRES_PASSWORD: medpal   # local dev only; never reused outside docker
       POSTGRES_DB: medpal
     ports: ["5433:5432"]          # 5433 avoids clashing with a host Postgres
-    volumes: [pgdata:/var/lib/postgresql/data]
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      - ./postgres/init:/docker-entrypoint-initdb.d:ro   # creates the non-superuser app role
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U medpal -d medpal"]
       interval: 3s
@@ -32,7 +34,8 @@ services:
     profiles: ["app"]
     environment:
       MEDPAL_ENV: dev
-      MEDPAL_DATABASE_URL: postgresql://medpal:medpal@postgres:5432/medpal
+      MEDPAL_DATABASE_URL: postgresql://medpal_app:medpal_app@postgres:5432/medpal          # app: RLS applies
+      MEDPAL_MIGRATION_DATABASE_URL: postgresql://medpal:medpal@postgres:5432/medpal      # owner: migrations only
     ports: ["8000:8000"]
     depends_on:
       postgres: { condition: service_healthy }

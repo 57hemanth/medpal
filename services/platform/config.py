@@ -12,8 +12,10 @@ class Settings(BaseSettings):
 
     env: Literal["dev", "test", "prod"] = "dev"
 
-    # psycopg-style URL; Alembic derives its SQLAlchemy URL from it.
-    database_url: str = "postgresql://medpal:medpal@localhost:5433/medpal"
+    # The application connects as a NON-superuser role so Postgres row-level security applies
+    # (superusers bypass RLS entirely). Migrations and seeding use the owner role.
+    database_url: str = "postgresql://medpal_app:medpal_app@localhost:5433/medpal"
+    migration_database_url: str = "postgresql://medpal:medpal@localhost:5433/medpal"
     # LangGraph checkpoint tables live in their own schema (ADR-0003: each module owns its schema).
     checkpoint_schema: str = "langgraph"
     db_pool_max_size: int = 10
@@ -29,8 +31,8 @@ class Settings(BaseSettings):
         return self
 
     @property
-    def sqlalchemy_url(self) -> str:
-        return self.database_url.replace("postgresql://", "postgresql+psycopg://", 1)
+    def migration_sqlalchemy_url(self) -> str:
+        return self.migration_database_url.replace("postgresql://", "postgresql+psycopg://", 1)
 
 
 @lru_cache

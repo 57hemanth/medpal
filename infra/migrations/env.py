@@ -8,7 +8,7 @@ from services.platform.config import get_settings
 
 
 def run_migrations_online() -> None:
-    engine = create_engine(get_settings().sqlalchemy_url)
+    engine = create_engine(get_settings().migration_sqlalchemy_url)
     with engine.connect() as connection:
         context.configure(connection=connection, target_metadata=None)
         with context.begin_transaction():
@@ -16,7 +16,7 @@ def run_migrations_online() -> None:
 
 
 if context.is_offline_mode():
-    context.configure(url=get_settings().sqlalchemy_url, literal_binds=True)
+    context.configure(url=get_settings().migration_sqlalchemy_url, literal_binds=True)
     with context.begin_transaction():
         context.run_migrations()
 else:

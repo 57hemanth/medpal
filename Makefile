@@ -24,7 +24,7 @@ reset:           ## stop containers and DELETE the local database volume
 migrate:         ## apply database migrations
 	$(RUN) alembic upgrade head
 
-seed-dev:        ## load the small slice-0 dev dataset (idempotent)
+seed-dev:        ## load the small local-development dataset (idempotent)
 	$(RUN) python -m infra.scripts.dev_seed
 
 api:             ## run the API locally with reload
