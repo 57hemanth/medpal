@@ -1,13 +1,13 @@
 COMPOSE := docker compose -f infra/docker-compose.yml
 RUN := uv run
 
-.PHONY: help install up up-all down reset migrate seed-dev api test test-unit test-int lint fmt check
+.PHONY: help install up up-all down reset migrate seed-dev api test test-unit test-int test-data lint fmt check data
 
 help:            ## list targets
 	@grep -E '^[a-z-]+:.*##' $(MAKEFILE_LIST) | awk -F':.*## ' '{printf "  %-10s %s\n", $$1, $$2}'
 
-install:         ## install Python deps (uv)
-	uv sync
+install:         ## install Python deps incl. dev + data groups (uv)
+	uv sync --all-groups
 
 up:              ## start Postgres + Redis
 	$(COMPOSE) up -d --wait postgres redis
@@ -30,10 +30,13 @@ seed-dev:        ## load the small slice-0 dev dataset (idempotent)
 api:             ## run the API locally with reload
 	$(RUN) uvicorn services.api.main:app --reload --port 8000
 
-test: test-unit test-int  ## all tests
+test: test-unit test-data test-int  ## all tests
 
 test-unit:       ## unit tests (no Docker needed)
 	$(RUN) pytest tests/unit -q
+
+test-data:       ## data transform checks (full-dataset checks skip if raw files are absent)
+	$(RUN) --group data pytest data/transforms/tests -q -rs
 
 test-int:        ## integration tests (need `make up migrate`; skipped if Postgres is down)
 	$(RUN) pytest tests/integration -q -rs
@@ -48,4 +51,7 @@ fmt:             ## auto-format
 	$(RUN) ruff check . --fix
 	$(RUN) ruff format .
 
-check: lint test-unit  ## what CI runs
+check: lint test-unit test-data  ## what CI runs
+
+data:            ## run all data transforms (needs raw files in data/raw, see data/inventory.md)
+	$(RUN) --group data python -m data.transforms.no_shows
