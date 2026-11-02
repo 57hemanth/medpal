@@ -1,7 +1,7 @@
 COMPOSE := docker compose -f infra/docker-compose.yml
 RUN := uv run
 
-.PHONY: help install up up-all down reset migrate seed-dev api test test-unit test-int test-data lint fmt check data
+.PHONY: help install up up-all down reset migrate api test test-unit test-int test-data lint fmt check data seed generate
 
 help:            ## list targets
 	@grep -E '^[a-z-]+:.*##' $(MAKEFILE_LIST) | awk -F':.*## ' '{printf "  %-10s %s\n", $$1, $$2}'
@@ -24,8 +24,11 @@ reset:           ## stop containers and DELETE the local database volume
 migrate:         ## apply database migrations
 	$(RUN) alembic upgrade head
 
-seed-dev:        ## load the small local-development dataset (idempotent)
-	$(RUN) python -m infra.scripts.dev_seed
+seed:            ## RESET dev data and load the generated network (500 doctors, 480k slots) + dev identities
+	$(RUN) --group data python -m infra.scripts.seed
+
+generate:        ## regenerate the synthetic network and slot calendar (seeded, reproducible)
+	$(RUN) --group data python -m data.synthetic.generate
 
 api:             ## run the API locally with reload
 	$(RUN) uvicorn services.api.main:app --reload --port 8000
@@ -36,7 +39,7 @@ test-unit:       ## unit tests (no Docker needed)
 	$(RUN) pytest tests/unit -q
 
 test-data:       ## data transform checks (full-dataset checks skip if raw files are absent)
-	$(RUN) --group data pytest data/transforms/tests -q -rs
+	$(RUN) --group data pytest data/transforms/tests data/synthetic/tests -q -rs
 
 test-int:        ## integration tests (need `make up migrate`; skipped if Postgres is down)
 	$(RUN) pytest tests/integration -q -rs
