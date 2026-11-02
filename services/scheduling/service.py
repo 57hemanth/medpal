@@ -1,7 +1,7 @@
 """Scheduling: shortlist free slots and reserve one. Deterministic code (automation ladder rung 1).
 
 Booking contract (ADR-10):
-  * one transaction: lock the slot row, count booked appointments, insert if under capacity;
+  * one transaction: advisory-lock the slot, count booked appointments, insert if under capacity;
   * a client-generated idempotency key makes retries return the same appointment;
   * a full slot returns None so the graph can re-offer, never double-book.
 """
@@ -82,7 +82,10 @@ async def reserve(
         if existing:
             return str(existing["appt_id"])
 
-        cur = await conn.execute("SELECT capacity FROM slot WHERE slot_id = %s FOR UPDATE", (slot_id,))
+        # Serialise bookings per slot with a transaction-scoped advisory lock. FOR UPDATE would need
+        # UPDATE privilege on `slot`, which the app role deliberately lacks (it must not edit capacity).
+        await conn.execute("SELECT pg_advisory_xact_lock(hashtextextended(%s, 0))", (f"slot:{slot_id}",))
+        cur = await conn.execute("SELECT capacity FROM slot WHERE slot_id = %s", (slot_id,))
         slot = await _one(cur)
         if slot is None:
             return None
