@@ -41,6 +41,7 @@ ignore = ["S101"]  # asserts are fine in tests
 [tool.ruff.lint.per-file-ignores]
 "tests/**" = ["S"]
 "infra/migrations/**" = ["E501", "S608"]  # DDL built from module constants, not user input
+"data/synthetic/**" = ["S311"]  # seeded random for reproducible synthetic data, not cryptography
 
 [tool.mypy]
 python_version = "3.12"
@@ -50,7 +51,7 @@ check_untyped_defs = true
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
 asyncio_default_fixture_loop_scope = "function"
-testpaths = ["tests", "data/transforms/tests"]
+testpaths = ["tests", "data/transforms/tests", "data/synthetic/tests"]
 markers = [
   "integration: needs the docker-compose stack (Postgres, Redis); skipped when unavailable",
 ]
