@@ -32,6 +32,11 @@ class Settings(BaseSettings):
     chat_base_url: str | None = None
     chat_temperature: float = 0.0
 
+    object_store_bucket: str = "medpal-records"
+    object_store_endpoint_url: str | None = None
+    object_store_access_key_id: str | None = None
+    object_store_secret_access_key: str | None = None
+
     @model_validator(mode="after")
     def _no_dev_auth_in_prod(self) -> "Settings":
         if self.env == "prod" and self.auth_mode == "dev":
