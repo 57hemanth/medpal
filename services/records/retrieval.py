@@ -23,8 +23,19 @@ class RetrievedChunk:
 
 
 async def retrieve(
-    pool: AsyncConnectionPool, auth: AuthContext, *, question: str, limit: int = 5
+    pool: AsyncConnectionPool,
+    auth: AuthContext,
+    *,
+    question: str,
+    patient_id: str | None = None,
+    limit: int = 5,
 ) -> list[RetrievedChunk]:
+    """Chunks the caller may read (RLS) that match the question.
+
+    `patient_id` narrows to ONE patient on top of RLS: a caregiver with consent from two people must
+    never get both people's reports mixed into a single answer. RLS still decides whether the caller
+    may see that patient at all.
+    """
     query_embedding = pgvector_literal(embed_text(question))
     async with scoped(pool, auth) as conn:
         rows = await (
@@ -39,11 +50,12 @@ async def retrieve(
                          + CASE WHEN c.embedding IS NULL THEN 0 ELSE 1 - (c.embedding <=> q.embedding) END
                        ) AS score
                   FROM doc_chunk c, q
-                 WHERE c.tsv @@ q.tsq OR c.embedding IS NOT NULL
+                 WHERE (c.tsv @@ q.tsq OR c.embedding IS NOT NULL)
+                   AND (%s::uuid IS NULL OR c.patient_id = %s::uuid)
                  ORDER BY score DESC, c.page, c.ordinal
                  LIMIT %s
                 """,
-                (question, query_embedding, limit),
+                (question, query_embedding, patient_id, patient_id, limit),
             )
         ).fetchall()
     return [RetrievedChunk(**cast(dict[str, Any], row)) for row in rows]

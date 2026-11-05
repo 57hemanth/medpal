@@ -101,6 +101,43 @@ def extract_text(content: bytes, content_type: str) -> ExtractedText:
         return ExtractedText(None, "needs_review", "invalid_document")
 
 
+def page_count(content: bytes, content_type: str) -> int:
+    """Number of pages to process; raises UploadRejected / returns 0 for unreadable documents."""
+    if content_type == "text/plain":
+        return 1
+    try:
+        reader = PdfReader(BytesIO(content))
+    except (PdfReadError, ValueError, KeyError, TypeError):
+        return 0
+    if reader.is_encrypted:
+        return 0
+    if len(reader.pages) > MAX_PAGES:
+        raise UploadRejected("too_many_pages")
+    return len(reader.pages)
+
+
+def extract_page(content: bytes, content_type: str, number: int) -> str | None:
+    """Text of one page: the PDF text layer, else local OCR. None if the page cannot be read.
+    Pages are independent, so the ingest graph extracts them in parallel."""
+    try:
+        if content_type == "text/plain":
+            return content.decode("utf-8")
+        text = PdfReader(BytesIO(content)).pages[number - 1].extract_text() or ""
+        if text.strip():
+            return text
+        return _ocr_page(content, number)
+    except (
+        OSError,
+        subprocess.SubprocessError,
+        PdfReadError,
+        UnicodeDecodeError,
+        ValueError,
+        KeyError,
+        IndexError,
+    ):
+        return None
+
+
 def validate_upload(content: bytes, content_type: str) -> None:
     if len(content) > MAX_UPLOAD_BYTES:
         raise UploadRejected("file_too_large")

@@ -51,6 +51,7 @@ async def answer_question(
     auth: AuthContext,
     *,
     question: str,
+    patient_id: str | None = None,
 ) -> RecordsAnswer:
     if needs_doctor_review(question):
         return RecordsAnswer(
@@ -58,7 +59,13 @@ async def answer_question(
             answer="This question needs a doctor to review it.",
             citations=[],
         )
-    chunks = await retrieve(pool, auth, question=question)
+    # A patient always asks about their own record; anyone else must say whose record they mean.
+    target = auth["acting_for_patient_id"] if auth["role"] == "patient" else patient_id
+    if target is None:
+        return RecordsAnswer(
+            status="patient_required", answer="Choose whose records you are asking about.", citations=[]
+        )
+    chunks = await retrieve(pool, auth, question=question, patient_id=target)
     if not chunks:
         return RecordsAnswer(
             status="insufficient_evidence", answer="I could not find this in your records.", citations=[]

@@ -1,13 +1,16 @@
 """Records upload and ingest status endpoints."""
 
+import uuid
 from typing import Annotated, Any
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Request, UploadFile, status
 from pydantic import BaseModel
 
 from services.api.deps import auth_ctx
+from services.api.tracing import traced
 from services.platform.auth import AuthContext
 from services.records.ingest import MAX_UPLOAD_BYTES, UploadRejected
+from services.records.ingest_graph import job_id
 from services.records.qa import answer_question
 from services.records.service import ingest_record, list_records, upload_record
 
@@ -36,6 +39,8 @@ class RecordOut(BaseModel):
 
 class QuestionIn(BaseModel):
     question: str
+    # Required for caregivers (whose record?); ignored for patients, who always ask about their own.
+    patient_id: str | None = None
 
 
 class CitationOut(BaseModel):
@@ -71,9 +76,17 @@ async def upload(
             content=content,
             content_type=file.content_type or "application/octet-stream",
         )
-        status_after_ingest = await ingest_record(
-            request.app.state.app_pool, request.app.state.object_store, doc_id=uploaded_record.doc_id
-        )
+        queue = getattr(request.app.state, "ingest_queue", None)
+        if queue is not None:
+            # Only the id is queued; the worker reads the content from the object store.
+            await queue.enqueue_job(
+                "ingest_document", uploaded_record.doc_id, _job_id=job_id(uploaded_record.doc_id)
+            )
+            status_after_ingest = "queued"
+        else:
+            status_after_ingest = await ingest_record(
+                request.app.state.app_pool, request.app.state.object_store, doc_id=uploaded_record.doc_id
+            )
     except PermissionError as exc:
         raise HTTPException(status.HTTP_403_FORBIDDEN, str(exc)) from exc
     except UploadRejected as exc:
@@ -88,12 +101,14 @@ async def records(request: Request, auth: Auth) -> list[RecordOut]:
 
 @router.post("/questions", response_model=AnswerOut)
 async def question(body: QuestionIn, request: Request, auth: Auth) -> AnswerOut:
-    result = await answer_question(
-        request.app.state.app_pool,
-        request.app.state.chat_client,
-        auth,
-        question=body.question,
-    )
+    async with traced(request, "records", str(uuid.uuid4())):
+        result = await answer_question(
+            request.app.state.app_pool,
+            request.app.state.chat_client,
+            auth,
+            question=body.question,
+            patient_id=body.patient_id,
+        )
     return AnswerOut(
         status=result.status,
         answer=result.answer,

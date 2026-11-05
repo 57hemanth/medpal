@@ -10,10 +10,9 @@ from psycopg_pool import AsyncConnectionPool
 
 from services.platform import audit
 from services.platform.auth import AuthContext
-from services.platform.db import scoped, scoped_system
+from services.platform.db import scoped
 
-from .embedding import embed_text, pgvector_literal
-from .ingest import chunk_text, extract_text, validate_upload
+from .ingest import validate_upload
 from .storage import ObjectStore
 
 
@@ -80,51 +79,13 @@ async def upload_record(
     return UploadedRecord(doc_id=doc["doc_id"], job_id=job["job_id"], status=job["status"], sha256=digest)
 
 
-async def ingest_record(pool: AsyncConnectionPool, store: ObjectStore, *, doc_id: str) -> str:
-    async with scoped_system(pool) as conn:
-        doc = await _one(
-            await conn.execute(
-                "SELECT doc_id::text, patient_id::text, uri FROM document WHERE doc_id = %s FOR UPDATE",
-                (doc_id,),
-            )
-        )
-        await conn.execute(
-            "UPDATE ingest_job SET status = 'running', updated_at = now() WHERE doc_id = %s",
-            (doc_id,),
-        )
-        content = await store.get(doc["uri"])
-        content_type = "application/pdf" if content.startswith(b"%PDF") else "text/plain"
-        extracted = await asyncio.to_thread(extract_text, content, content_type)
-        if extracted.text is None:
-            await conn.execute(
-                "UPDATE ingest_job SET status = %s, error = %s, updated_at = now() WHERE doc_id = %s",
-                (extracted.status, extracted.error, doc_id),
-            )
-            return extracted.status
-        # Immutable content-addressed uploads make identical ingest retries safe.
-        ordinal = 0
-        for page, text in enumerate(extracted.pages or (extracted.text,), 1):
-            for chunk in chunk_text(text):
-                await conn.execute(
-                    "INSERT INTO doc_chunk (doc_id, patient_id, page, ordinal, text, embedding)"
-                    " VALUES (%s, %s, %s, %s, %s, %s::vector)"
-                    " ON CONFLICT (doc_id, page, ordinal) DO NOTHING",
-                    (
-                        doc["doc_id"],
-                        doc["patient_id"],
-                        page,
-                        ordinal,
-                        chunk,
-                        pgvector_literal(embed_text(chunk)),
-                    ),
-                )
-                ordinal += 1
-        await conn.execute("UPDATE document SET phi_status = 'tagged' WHERE doc_id = %s", (doc_id,))
-        await conn.execute(
-            "UPDATE ingest_job SET status = 'ready', error = NULL, updated_at = now() WHERE doc_id = %s",
-            (doc_id,),
-        )
-        return "ready"
+async def ingest_record(
+    pool: AsyncConnectionPool, store: ObjectStore, *, doc_id: str, max_concurrency: int = 4
+) -> str:
+    """Extract, chunk, embed and index one document; pages are processed in parallel (ingest_graph)."""
+    from .ingest_graph import run_ingest  # local import: the graph module imports this package
+
+    return await run_ingest(pool, store, doc_id=doc_id, max_concurrency=max_concurrency)
 
 
 async def list_records(pool: AsyncConnectionPool, auth: AuthContext) -> list[dict[str, Any]]:
