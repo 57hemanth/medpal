@@ -14,14 +14,16 @@ SYSTEM = (
     "You route parts of a clinic assistant message to specialists. For each numbered clause choose one: "
     "'triage' (symptoms, wanting to see or book a doctor), 'records' (questions about the person's own "
     "medical reports, lab results or uploaded documents), 'scribe' (a doctor asking to draft or write up "
-    "the consultation note), or 'none'. Only use specialists from the allowed list. Never diagnose. "
+    "the consultation note), 'visit' (a follow-up about the appointment already found or booked in this "
+    "conversation: which doctor, their specialty, the clinic, the time), or 'none'. "
+    "Only use specialists from the allowed list. Never diagnose. "
     "Return one route per clause number."
 )
 
 
 class ClauseRoute(BaseModel):
     clause: int = Field(ge=0)
-    specialist: Literal["triage", "records", "scribe", "none"]
+    specialist: Literal["triage", "records", "scribe", "visit", "none"]
 
 
 class RoutePlan(BaseModel):

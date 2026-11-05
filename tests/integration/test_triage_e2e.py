@@ -2,7 +2,6 @@
 Also proves the API is stateless: a run paused by one app instance is resumed by another."""
 
 import uuid
-from datetime import UTC, datetime, timedelta
 
 import httpx
 import psycopg
@@ -11,35 +10,6 @@ import pytest
 from services.api.main import create_app
 
 pytestmark = pytest.mark.integration
-
-
-@pytest.fixture
-def gm_world(admin_url: str) -> dict[str, str]:
-    """A fresh General Medicine doctor with the earliest slot, so the stub specialty finds it first."""
-    ids = {k: str(uuid.uuid4()) for k in ("clinic", "doctor", "slot", "patient", "user")}
-    with psycopg.connect(admin_url) as conn, conn.transaction():
-        conn.execute("INSERT INTO specialty (name) VALUES ('General Medicine') ON CONFLICT (name) DO NOTHING")
-        spec = conn.execute("SELECT specialty_id FROM specialty WHERE name = 'General Medicine'").fetchone()
-        assert spec is not None
-        conn.execute(
-            "INSERT INTO clinic (clinic_id, name, city, district, opens_at, closes_at)"
-            " VALUES (%s, 'E2E Clinic', 'Pune', 'Pune', '09:00', '18:00')",
-            (ids["clinic"],),
-        )
-        conn.execute(
-            "INSERT INTO doctor (doctor_id, name, specialty_id) VALUES (%s, 'Dr E2E', %s)",
-            (ids["doctor"], spec[0]),
-        )
-        conn.execute(
-            "INSERT INTO slot (slot_id, doctor_id, clinic_id, starts_at) VALUES (%s, %s, %s, %s)",
-            (ids["slot"], ids["doctor"], ids["clinic"], datetime.now(UTC) + timedelta(minutes=2)),
-        )
-        conn.execute("INSERT INTO patient (patient_id, name) VALUES (%s, 'E2E Patient')", (ids["patient"],))
-        conn.execute(
-            "INSERT INTO app_user (user_id, role, patient_id) VALUES (%s, 'patient', %s)",
-            (ids["user"], ids["patient"]),
-        )
-    return ids
 
 
 async def _client_call(method_path: str, json: dict, headers: dict) -> httpx.Response:

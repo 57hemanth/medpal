@@ -29,10 +29,10 @@ from langgraph.types import Send
 from services.agent.triage.rules import match_red_flags, match_specialty
 from services.platform.auth import AuthContext
 
-Specialist = Literal["triage", "records", "scribe"]
-SPECIALISTS: tuple[Specialist, ...] = ("triage", "records", "scribe")
+Specialist = Literal["triage", "records", "scribe", "visit"]
+SPECIALISTS: tuple[Specialist, ...] = ("triage", "records", "scribe", "visit")
 ALLOWED: dict[str, frozenset[str]] = {
-    "patient": frozenset({"triage", "records"}),
+    "patient": frozenset({"triage", "records", "visit"}),
     "caregiver": frozenset({"records"}),
     "doctor": frozenset({"records", "scribe"}),
 }
@@ -55,6 +55,7 @@ class Delegation(TypedDict):
     patient_id: str | None
     encounter_id: str | None
     transcript: str | None
+    conversation_thread_id: str | None
 
 
 class Planner(Protocol):
@@ -92,6 +93,10 @@ class Specialists(Protocol):
         self, auth: AuthContext, *, encounter_id: str, transcript: str, thread_id: str
     ) -> dict[str, Any]: ...
 
+    async def visit(self, auth: AuthContext, *, thread_id: str) -> dict[str, Any]:
+        """Answer about the appointment found or booked earlier in this conversation, from saved state."""
+        ...
+
 
 class SupervisorState(TypedDict, total=False):
     auth: AuthContext
@@ -100,6 +105,7 @@ class SupervisorState(TypedDict, total=False):
     patient_id: str | None  # a caregiver names whose records they mean
     encounter_id: str | None  # a doctor's open consultation
     transcript: str | None
+    conversation_thread_id: str | None  # the triage run earlier in this chat, for follow-up questions
     clauses: list[str]
     tasks: list[Task]
     planned_by: Literal["safety", "model", "rules"]
@@ -123,6 +129,17 @@ _RECORDS = re.compile(
     r"x-?ray|scan|mri|ultrasound|record|records|uploaded|what (?:was|were|is|are) (?:my|the|her|his))\b",
     re.I,
 )
+# Follow-ups about the appointment found or booked earlier in this chat ("which doctor?", "what time?").
+_VISIT = re.compile(
+    r"\b(?:doctor|doctor's|specialist|speciali[sz]ation|specialty|speciality|appointment|booking|booked|"
+    r"visit|slot|clinic|hospital|address|where|when|what time|reference|confirmation|daktar)\b",
+    re.I,
+)
+# ...unless the clause also describes a symptom: then it is a new triage, not a follow-up.
+_SYMPTOM_ONLY = re.compile(
+    r"\b(?:pain|ache|fever|cough|rash|itch|swelling|vomit|dizzy|headache|bleeding|breath|dard|bukhar)\b",
+    re.I,
+)
 _SCRIBE = re.compile(
     r"\b(?:draft|note|notes|soap|scribe|write up|document (?:the|this) (?:visit|consult))", re.I
 )
@@ -141,10 +158,19 @@ def split_clauses(message: str) -> list[str]:
     return parts or [message.strip()]
 
 
-def rule_assign(clauses: list[str], role: str, *, has_transcript: bool) -> list[tuple[int, str]]:
+def rule_assign(
+    clauses: list[str], role: str, *, has_transcript: bool, has_conversation: bool = False
+) -> list[tuple[int, str]]:
     out: list[tuple[int, str]] = []
     for i, clause in enumerate(clauses):
-        if _RECORDS.search(clause):
+        if (
+            has_conversation
+            and role == "patient"
+            and _VISIT.search(clause)
+            and not _SYMPTOM_ONLY.search(clause)
+        ):
+            out.append((i, "visit"))
+        elif _RECORDS.search(clause):
             out.append((i, "records"))
         elif role == "doctor" and _SCRIBE.search(clause):
             out.append((i, "scribe"))
@@ -166,6 +192,7 @@ def build_tasks(
     role: str,
     has_encounter: bool,
     has_transcript: bool,
+    has_conversation: bool = False,
 ) -> list[Task]:
     """Validate the assignment against the role, then merge clauses per specialist (one run each)."""
     allowed = ALLOWED.get(role, frozenset())
@@ -177,6 +204,8 @@ def build_tasks(
             continue
         if specialist == "scribe" and not (has_encounter and has_transcript):
             continue
+        if specialist == "visit" and not has_conversation:
+            continue  # nothing booked or offered in this chat to talk about
         if specialist == "records" and role == "doctor" and not has_encounter:
             continue  # a doctor asks about the patient in front of them, never "any patient"
         merged.setdefault(specialist, [])
@@ -197,6 +226,7 @@ _FAILED_REPLY = {
     "triage": "I couldn't finish finding you a doctor. The front desk can help you book.",
     "records": "I couldn't answer from your records just now. Please try again shortly.",
     "scribe": "The note draft isn't available right now; you can write the note by hand.",
+    "visit": "I couldn't look up that appointment just now. It's listed under Appointments.",
 }
 _FRONT_DESK = {
     "patient": (
@@ -221,20 +251,22 @@ def build_supervisor_graph(specialists: Specialists, planner: Planner | None = N
         role = state["auth"]["role"]
         clauses = state["clauses"]
         has_transcript = bool((state.get("transcript") or "").strip())
+        has_conversation = bool(state.get("conversation_thread_id"))
+        allowed = ALLOWED.get(role, frozenset())
+        if not has_conversation:
+            allowed = allowed - {"visit"}
         planned_by: Literal["model", "rules"] = "rules"
         assignments: list[tuple[int, str]] = []
         if planner is not None:
             try:
-                assignments = [
-                    (i, s)
-                    for i, s in await planner.assign(clauses, ALLOWED.get(role, frozenset()))
-                    if s != "none"
-                ]
+                assignments = [(i, s) for i, s in await planner.assign(clauses, allowed) if s != "none"]
                 planned_by = "model" if assignments else "rules"
             except Exception:  # noqa: BLE001  any planner failure falls back to rules, never fails the run
                 assignments = []
         if not assignments:
-            assignments = rule_assign(clauses, role, has_transcript=has_transcript)
+            assignments = rule_assign(
+                clauses, role, has_transcript=has_transcript, has_conversation=has_conversation
+            )
         if role == "doctor" and has_transcript and not any(s == "scribe" for _, s in assignments):
             assignments.append((len(clauses), "scribe"))
         if role == "patient" and not assignments:
@@ -245,6 +277,7 @@ def build_supervisor_graph(specialists: Specialists, planner: Planner | None = N
             role=role,
             has_encounter=bool(state.get("encounter_id")),
             has_transcript=has_transcript,
+            has_conversation=has_conversation,
         )
         return {"tasks": tasks, "planned_by": planned_by}
 
@@ -261,6 +294,7 @@ def build_supervisor_graph(specialists: Specialists, planner: Planner | None = N
                     patient_id=state.get("patient_id"),
                     encounter_id=state.get("encounter_id"),
                     transcript=state.get("transcript"),
+                    conversation_thread_id=state.get("conversation_thread_id"),
                 ),
             )
             for task in state["tasks"]
@@ -281,6 +315,8 @@ def build_supervisor_graph(specialists: Specialists, planner: Planner | None = N
         try:
             if task["specialist"] == "triage":
                 result = await specialists.triage(auth, text=task["request"], thread_id=delegation_id)
+            elif task["specialist"] == "visit":
+                result = await specialists.visit(auth, thread_id=state["conversation_thread_id"] or "")
             elif task["specialist"] == "records":
                 result = await specialists.records(
                     auth,

@@ -32,6 +32,8 @@ class AssistantIn(BaseModel):
     patient_id: str | None = None  # caregivers: whose records
     encounter_id: str | None = None  # doctors: the open consultation
     transcript: str | None = Field(default=None, max_length=100_000)
+    # The triage run earlier in this chat, so follow-ups ("which doctor?") are answered from it.
+    conversation_thread_id: str | None = None
 
 
 class AssistantOut(BaseModel):
@@ -119,6 +121,35 @@ class AppSpecialists:
         session = _session_out(thread_id, out).model_dump()
         return {**session, "reply": "A draft note is ready for your review."}
 
+    async def visit(self, auth: AuthContext, *, thread_id: str) -> dict[str, Any]:
+        """Facts about this chat's appointment, read from the triage run's saved state. No model, so
+        nothing can be invented; only the caller's own run is readable."""
+        snapshot = await self._state.triage_graph.aget_state({"configurable": {"thread_id": thread_id}})
+        values = snapshot.values or {}
+        if values.get("auth", {}).get("user_id") != auth["user_id"]:
+            return {"status": "not_found", "reply": "I can't find an appointment in this conversation."}
+        specialty = values.get("specialty")
+        candidates = values.get("candidates") or []
+        chosen = next((c for c in candidates if c["slot_id"] == values.get("chosen_slot_id")), None)
+        if values.get("booking_id") and chosen:
+            reference = str(values["booking_id"])[:8].upper()
+            reply = (
+                f"Your appointment is with {chosen['doctor_name']}"
+                + (f", {specialty}" if specialty else "")
+                + f", at {chosen['clinic_name']} on {chosen['display_time']} IST."
+                + f" Booking reference {reference}."
+            )
+            return {"status": "booked", "reply": reply, "thread_id": thread_id}
+        if candidates:
+            names = ", ".join(c["doctor_name"] for c in candidates)
+            reply = (
+                f"I found {len(candidates)} {specialty or ''} options: {names}. Choose one above to book it."
+            ).replace("  ", " ")
+            return {"status": "options", "reply": reply, "thread_id": thread_id}
+        if values.get("outcome") == "emergency":
+            return {"status": "emergency", "reply": "This conversation was passed to the emergency desk."}
+        return {"status": "not_found", "reply": "Nothing has been booked in this conversation yet."}
+
     async def _encounter_patient(self, auth: AuthContext, encounter_id: str | None) -> str | None:
         if not encounter_id:
             return None
@@ -149,6 +180,7 @@ async def ask(body: AssistantIn, request: Request, auth: Auth) -> AssistantOut:
                 "patient_id": body.patient_id,
                 "encounter_id": body.encounter_id,
                 "transcript": body.transcript,
+                "conversation_thread_id": body.conversation_thread_id,
                 "results": [],
             },
             {"callbacks": callbacks, "max_concurrency": MAX_PARALLEL_SPECIALISTS},

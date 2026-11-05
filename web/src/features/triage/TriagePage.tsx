@@ -119,10 +119,11 @@ export function SafetyCheck({
       {questions.map((q) => (
         <fieldset
           key={q.key}
+          aria-labelledby={`safety-${q.key}`}
           className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-line p-3"
         >
-          <legend className="sr-only">{q.question}</legend>
-          <span className="text-sm text-slate-700" aria-hidden="true">
+          {/* The visible question is the group's only label: read once, copied once. */}
+          <span id={`safety-${q.key}`} className="text-sm text-slate-700">
             {q.question}
           </span>
           <span className="flex gap-2">
@@ -183,6 +184,8 @@ export function TriagePage() {
   const [error, setError] = useState('');
   const logRef = useRef<HTMLDivElement>(null);
   const keys = useRef(new Map<string, string>());
+  // The triage run in this chat: follow-ups ("which doctor?") are answered from it, not from records.
+  const conversation = useRef<string | null>(null);
   const {
     data: appointments = [],
     isPending,
@@ -228,13 +231,24 @@ export function TriagePage() {
       // runs triage and records in parallel. A triage result continues here on its own thread.
       const response = await api<AssistantOut>(
         '/api/assistant',
-        { method: 'POST', body: JSON.stringify({ message: value.trim() }) },
+        {
+          method: 'POST',
+          body: JSON.stringify({
+            message: value.trim(),
+            conversation_thread_id: conversation.current,
+          }),
+        },
         auth,
       );
       const triage = response.results.find(
         (part) => part.specialist === 'triage',
       ) as TriageOut | undefined;
-      setActive(triage ?? null);
+      // Only a new triage result replaces the active one: a follow-up question must not disable the
+      // slot choices or safety questions still waiting above.
+      if (triage) {
+        setActive(triage);
+        conversation.current = triage.thread_id;
+      }
       const replies: Message[] = response.results.map((part) =>
         part.specialist === 'triage'
           ? {
@@ -404,7 +418,7 @@ export function TriagePage() {
         description="Describe how you feel, ask about a report, or both. Emergencies go straight to a person."
       />
       <div className="grid items-start gap-6 xl:grid-cols-[minmax(0,1fr)_290px]">
-        <div className="panel min-w-0 overflow-hidden">
+        <div className="panel min-w-0 overflow-hidden flex flex-col [&>*]:shrink-0 xl:h-[calc(100dvh-220px)] xl:min-h-[480px]">
           <div className="flex items-center justify-between gap-3 border-b border-line px-5 py-4 sm:px-6">
             <div className="flex items-center gap-3">
               <AssistantAvatar />
@@ -419,6 +433,7 @@ export function TriagePage() {
               onClick={() => {
                 setMessages([]);
                 setActive(null);
+                conversation.current = null;
                 setError('');
                 setText('');
               }}
@@ -436,7 +451,7 @@ export function TriagePage() {
             aria-label="Care conversation"
             aria-live="polite"
             aria-relevant="additions"
-            className="relative h-[280px] space-y-7 overflow-y-auto px-5 py-7 sm:h-[clamp(320px,calc(100dvh-560px),500px)] sm:px-7"
+            className="relative h-[280px] min-h-0 space-y-7 overflow-y-auto px-5 py-7 sm:h-[clamp(320px,calc(100dvh-560px),500px)] sm:px-7 xl:h-auto xl:flex-1!"
           >
             <div className="flex gap-3">
               <AssistantAvatar />
@@ -607,14 +622,17 @@ export function TriagePage() {
                             </p>
                           </div>
                         )}
-                        <details className="mt-3 text-xs text-muted">
-                          <summary className="cursor-pointer py-2">
-                            Booking reference
-                          </summary>
-                          <span className="break-all font-mono">
-                            {message.result.booking_id}
+                        <p className="mt-3 text-xs text-muted">
+                          Booking reference{' '}
+                          <span
+                            className="font-mono font-semibold text-ink"
+                            title={message.result.booking_id}
+                          >
+                            {message.result.booking_id
+                              ?.slice(0, 8)
+                              .toUpperCase()}
                           </span>
-                        </details>
+                        </p>
                       </div>
                     )}
                   </div>
@@ -693,7 +711,7 @@ export function TriagePage() {
             </p>
           </div>
         </div>
-        <aside className="space-y-5">
+        <aside className="space-y-5 xl:max-h-[max(calc(100dvh-220px),480px)] xl:overflow-y-auto xl:pr-1">
           <div className="panel overflow-hidden">
             <div className="flex items-center justify-between border-b border-line px-5 py-4">
               <h2 className="text-sm font-semibold">Your next visit</h2>

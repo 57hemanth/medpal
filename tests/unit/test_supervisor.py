@@ -57,6 +57,10 @@ class FakeSpecialists:
             raise RuntimeError("boom")
         return {"status": "answered", "reply": "Your LDL was 162 mg/dL.", "citations": [{"page": 1}]}
 
+    async def visit(self, auth, *, thread_id):
+        self.calls.append(("visit", {"thread_id": thread_id}))
+        return {"status": "booked", "reply": "Your appointment is with Dr Ranade, Orthopaedics."}
+
     async def scribe(self, auth, *, encounter_id, transcript, thread_id):
         self.calls.append(("scribe", {"encounter_id": encounter_id, "thread_id": thread_id}))
         await self._arrive()
@@ -221,3 +225,29 @@ def test_clauses_split_on_sentences_and_new_questions_but_not_symptom_lists():
         "fever since monday",
         "what was my hba1c",
     ]
+
+
+async def test_a_follow_up_about_this_chats_booking_is_answered_from_it_not_from_records():
+    sp = FakeSpecialists()
+    out = await run(sp, PATIENT, "what is the doctor specialization?", conversation_thread_id="triage-1")
+    assert [c[0] for c in sp.calls] == ["visit"]
+    assert sp.calls[0][1]["thread_id"] == "triage-1"
+    assert "Orthopaedics" in out["reply"]
+
+
+async def test_without_a_booking_in_the_chat_there_is_no_visit_to_ask_about():
+    sp = FakeSpecialists()
+    # Even if the model says "visit", there is no conversation to answer from.
+    await run(sp, PATIENT, "which doctor is it?", FixedPlanner([(0, "visit")]))
+    assert "visit" not in [c[0] for c in sp.calls]
+
+
+async def test_a_new_symptom_in_a_follow_up_still_goes_to_triage():
+    sp = FakeSpecialists()
+    await run(
+        sp,
+        PATIENT,
+        "Which clinic is it at? Also I now have a fever and cough.",
+        conversation_thread_id="triage-1",
+    )
+    assert sorted(c[0] for c in sp.calls) == ["triage", "visit"]

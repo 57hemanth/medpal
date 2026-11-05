@@ -198,3 +198,75 @@ test('one message can book care and answer from records, with sources', async ()
     screen.getByRole('group', { name: 'Chest pain right now?' }),
   ).toBeInTheDocument();
 });
+
+test('a follow-up after booking is answered from this chat, not the records', async () => {
+  const sent: { message: string; conversation_thread_id: string | null }[] = [];
+  vi.mocked(api).mockImplementation(async (path, options) => {
+    if (path === '/api/appointments') return [];
+    if (path === '/api/assistant') {
+      const body = JSON.parse(String(options?.body));
+      sent.push(body);
+      if (sent.length === 1)
+        return triageOnly({
+          thread_id: 'knee-thread',
+          status: 'awaiting_choice',
+          specialty: 'Orthopaedics',
+          candidates: [
+            {
+              slot_id: 'slot',
+              doctor_name: 'Chetan Ranade',
+              clinic_name: 'Aundh Clinic',
+              display_time: 'Mon 9 Nov, 09:00',
+            },
+          ],
+        });
+      return {
+        trace_id: 't2',
+        outcome: 'delegated',
+        reply: '',
+        results: [
+          {
+            specialist: 'visit',
+            status: 'booked',
+            reply:
+              'Your appointment is with Chetan Ranade, Orthopaedics, at Aundh Clinic on Mon 9 Nov, 09:00 IST.',
+          },
+        ],
+      };
+    }
+    if (path.endsWith('/resume'))
+      return {
+        thread_id: 'knee-thread',
+        status: 'booked',
+        booking_id: 'abcdef1234',
+      };
+    throw new Error(`Unexpected endpoint ${path}`);
+  });
+  render(
+    <QueryClientProvider
+      client={
+        new QueryClient({ defaultOptions: { queries: { retry: false } } })
+      }
+    >
+      <MemoryRouter>
+        <TriagePage />
+      </MemoryRouter>
+    </QueryClientProvider>,
+  );
+  const user = userEvent.setup();
+  await user.click(
+    screen.getByRole('button', { name: 'I’ve had knee pain for a week' }),
+  );
+  await user.click(await screen.findByRole('button', { name: 'Choose time' }));
+  expect(await screen.findByText('ABCDEF12')).toBeInTheDocument(); // reference shown, not hidden
+  await user.type(
+    screen.getByPlaceholderText('Tell me how you’re feeling…'),
+    'what is the doctor specialization?',
+  );
+  await user.keyboard('{Enter}');
+  expect(
+    await screen.findByText(/Chetan Ranade, Orthopaedics, at Aundh Clinic/),
+  ).toBeInTheDocument();
+  expect(sent[0].conversation_thread_id).toBeNull();
+  expect(sent[1].conversation_thread_id).toBe('knee-thread');
+});

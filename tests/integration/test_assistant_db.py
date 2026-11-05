@@ -99,3 +99,67 @@ async def test_caregiver_cannot_book_through_the_assistant(world, admin_url):
     assert r.status_code == 200, r.text
     assert r.json()["outcome"] == "front_desk"
     assert r.json()["results"] == []
+
+
+async def test_follow_up_questions_are_answered_from_this_chats_booking_and_only_for_its_owner(
+    gm_world, admin_url
+):
+    patient = {
+        "X-Dev-User-Id": gm_world["user"],
+        "X-Dev-Role": "patient",
+        "X-Dev-Patient-Id": gm_world["patient"],
+    }
+    stranger_user, stranger_patient = str(uuid.uuid4()), str(uuid.uuid4())
+    with psycopg.connect(admin_url) as conn, conn.transaction():
+        conn.execute(
+            "INSERT INTO patient (patient_id, name) VALUES (%s, 'Other Person')", (stranger_patient,)
+        )
+        conn.execute(
+            "INSERT INTO app_user (user_id, role, patient_id) VALUES (%s, 'patient', %s)",
+            (stranger_user, stranger_patient),
+        )
+    stranger = {"X-Dev-User-Id": stranger_user, "X-Dev-Role": "patient", "X-Dev-Patient-Id": stranger_patient}
+    app = create_app()
+    transport = httpx.ASGITransport(app=app)
+    async with (
+        app.router.lifespan_context(app),
+        httpx.AsyncClient(transport=transport, base_url="http://t") as client,
+    ):
+        body = (
+            await client.post("/api/assistant", headers=patient, json={"message": "mild fever and body ache"})
+        ).json()
+        [triage] = body["results"]
+        thread = triage["thread_id"]
+        answers = {q["key"]: False for q in triage["safety_questions"]}
+        offered = (
+            await client.post(f"/triage/{thread}/resume", headers=patient, json={"safety_answers": answers})
+        ).json()
+        slot = offered["candidates"][0]
+        booked = (
+            await client.post(
+                f"/triage/{thread}/resume",
+                headers=patient,
+                json={"slot_id": slot["slot_id"], "idempotency_key": f"k-{uuid.uuid4()}"},
+            )
+        ).json()
+        assert booked["status"] == "booked"
+
+        follow = (
+            await client.post(
+                "/api/assistant",
+                headers=patient,
+                json={"message": "what is the doctor specialization?", "conversation_thread_id": thread},
+            )
+        ).json()
+        snooped = (
+            await client.post(
+                "/api/assistant",
+                headers=stranger,
+                json={"message": "which doctor is it?", "conversation_thread_id": thread},
+            )
+        ).json()
+    [answer] = follow["results"]
+    assert answer["specialist"] == "visit" and answer["status"] == "booked"
+    assert slot["doctor_name"] in answer["reply"] and "General Medicine" in answer["reply"]
+    [refused] = snooped["results"]
+    assert refused["status"] == "not_found" and slot["doctor_name"] not in refused["reply"]
