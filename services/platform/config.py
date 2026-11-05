@@ -80,7 +80,21 @@ class Settings(BaseSettings):
     chat_fallback_api_key: str | None = None
     chat_fallback_base_url: str | None = None
 
+    # Consultation speech-to-text. "local": faster-whisper inside the boundary (audio never leaves).
+    # "gemini": better on Hinglish, but the AUDIO goes to the provider and speech can't be
+    # de-identified, so it also needs allow_audio_egress=true (ADR-0016).
+    speech_provider: Literal["local", "gemini"] = "local"
     speech_model_path: str | None = None
+    speech_language: str | None = "en"  # local model: "en" keeps Latin script; None detects the language
+    speech_model: str | None = None  # hosted model id; defaults to the small chat model
+    # Words the transcriber should expect. Short dictated pieces carry little context, and drug names
+    # are where mistakes matter most ("Parasatomol" for paracetamol without this). Comma separated.
+    speech_vocabulary: str = (
+        "paracetamol, ibuprofen, diclofenac, amoxicillin, azithromycin, cefixime, doxycycline, cetirizine, "
+        "levocetirizine, montelukast, salbutamol, metformin, glimepiride, amlodipine, telmisartan, losartan, "
+        "atorvastatin, rosuvastatin, pantoprazole, ranitidine, ondansetron, domperidone, ORS, HbA1c, SpO2"
+    )
+    allow_audio_egress: bool = False
 
     # Cost metering: price per million tokens by model id, e.g.
     # MEDPAL_MODEL_PRICES='{"gemini-2.5-flash": {"in": 0.30, "out": 2.50}}'. Never hard-coded in the code;
@@ -119,6 +133,11 @@ class Settings(BaseSettings):
             raise ValueError("production requires a random MEDPAL_SESSION_SECRET of at least 32 characters")
         if self.env == "prod" and self.auth_mode == "otp" and self.sms_provider == "log":
             raise ValueError("production sign-in by mobile needs a real SMS provider, not the log")
+        if self.speech_provider == "gemini" and not self.allow_audio_egress:
+            raise ValueError(
+                "speech_provider=gemini sends consultation audio to the provider; set "
+                "MEDPAL_ALLOW_AUDIO_EGRESS=true to accept that (see ADR-0016)"
+            )
         if self.chat_fallback_provider and not self.chat_fallback_model:
             raise ValueError("chat_fallback_model is required when chat_fallback_provider is set")
         if self.env == "prod" and self.chat_provider == "fake":

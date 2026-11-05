@@ -104,7 +104,10 @@ async def test_local_speech_uses_in_memory_audio(monkeypatch):
     monkeypatch.setattr(speech, "_model", lambda path: model)
     result = await speech.LocalSpeechTranscriber("/local/model").transcribe(wav_bytes())
     assert result == "Review this transcript."
-    assert isinstance(model.transcribe.call_args.args[0], BytesIO)
+    samples = model.transcribe.call_args.args[0]  # decoded here, not by the model library's decoder
+    assert samples.dtype.name == "float32" and len(samples) == 16000
+    assert model.transcribe.call_args.kwargs["language"] == "en"
+    assert model.transcribe.call_args.kwargs["initial_prompt"] is None  # no vocabulary given here
 
 
 async def test_speech_rejects_invalid_audio_and_unconfigured_model():

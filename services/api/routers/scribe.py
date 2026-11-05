@@ -10,8 +10,10 @@ from pydantic import BaseModel, Field, model_validator
 from services.api.deps import auth_ctx
 from services.api.tracing import traced
 from services.platform.auth import AuthContext
+from services.platform.config import get_settings
 from services.platform.egress.client import ModelUnavailable
 from services.platform.phi.scrubber import BlockedIdentifier, EgressBlocked
+from services.platform.tracing import trace_run
 from services.scribe.encounters import list_consultations, start_encounter
 from services.scribe.service import AlreadySigned, SoapDraft, draft_note, list_notes, sign_note
 from services.scribe.speech import MAX_AUDIO_BYTES, SpeechUnavailable
@@ -80,6 +82,20 @@ class TranscriptOut(BaseModel):
     transcript: str
 
 
+class SpeechOut(BaseModel):
+    provider: Literal["local", "gemini"]
+    audio_leaves_boundary: bool
+
+
+@router.get("/speech", response_model=SpeechOut)
+async def speech(auth: Auth) -> SpeechOut:
+    """Where consultation audio is transcribed, so the page can tell the doctor truthfully."""
+    if auth["role"] != "doctor":
+        raise HTTPException(status.HTTP_403_FORBIDDEN, "only doctors transcribe consultations")
+    provider = get_settings().speech_provider
+    return SpeechOut(provider=provider, audio_leaves_boundary=provider != "local")
+
+
 @router.post(
     "/transcribe",
     response_model=TranscriptOut,
@@ -103,7 +119,14 @@ async def transcribe(
             raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, "audio_too_large")
         content.extend(chunk)
     try:
-        text = await request.app.state.speech_transcriber.transcribe(bytes(content))
+        # Traced like every model call: a hosted transcriber's tokens and cost land in the cost sheet.
+        async with trace_run(
+            "scribe",
+            f"transcribe-{uuid.uuid4()}",
+            getattr(request.app.state, "trace_sink", None),
+            getattr(request.app.state, "prices", None),
+        ):
+            text = await request.app.state.speech_transcriber.transcribe(bytes(content))
     except SpeechUnavailable as exc:
         raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, str(exc)) from exc
     except ValueError as exc:

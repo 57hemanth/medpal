@@ -1,7 +1,7 @@
 COMPOSE := docker compose -f infra/docker-compose.yml
 RUN := uv run
 
-.PHONY: eval live-check judge worker cost-report load-test up-boundary boundary-check help install up up-all down reset migrate api web-install web-build web-test test test-unit test-int test-data lint fmt check data seed generate
+.PHONY: speech-model eval live-check judge worker cost-report load-test up-boundary boundary-check help install up up-all down reset migrate api web-install web-build web-test test test-unit test-int test-data lint fmt check data seed generate
 
 help:            ## list targets
 	@grep -E '^[a-z-]+:.*##' $(MAKEFILE_LIST) | awk -F':.*## ' '{printf "  %-10s %s\n", $$1, $$2}'
@@ -29,6 +29,11 @@ down:            ## stop containers (keeps data)
 
 reset:           ## stop containers and DELETE the local database volume
 	$(COMPOSE) --profile app down -v
+
+speech-model:    ## install offline speech-to-text and download Whisper small (~460 MB, once)
+	uv sync --all-groups --extra speech
+	$(RUN) python -c "from huggingface_hub import snapshot_download; snapshot_download('Systran/faster-whisper-small', local_dir='.medpal/models/faster-whisper-small')"
+	@echo "set MEDPAL_SPEECH_MODEL_PATH=.medpal/models/faster-whisper-small in .env, then restart the API"
 
 migrate:         ## apply database migrations
 	$(RUN) alembic upgrade head

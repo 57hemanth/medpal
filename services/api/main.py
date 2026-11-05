@@ -28,7 +28,7 @@ from services.platform.db import app_pool, checkpoint_pool
 from services.platform.egress import EgressChatClient, build_model_routes
 from services.platform.tracing import PostgresSpanSink, Prices
 from services.records.storage import build_object_store
-from services.scribe.speech import LocalSpeechTranscriber
+from services.scribe.speech import build_speech_transcriber
 
 STATIC_DIR = next((path for path in (Path("static"), Path("web/dist")) if path.exists()), None)
 
@@ -49,7 +49,7 @@ async def _postgres_lifespan(app: FastAPI) -> AsyncIterator[None]:
         if settings.ingest_mode == "queue":
             app.state.ingest_queue = await create_pool(RedisSettings.from_dsn(settings.redis_url))
         app.state.object_store = build_object_store(settings)
-        app.state.speech_transcriber = LocalSpeechTranscriber(settings.speech_model_path)
+        app.state.speech_transcriber = build_speech_transcriber(settings)
         routes = build_model_routes(settings)
         app.state.chat_client = EgressChatClient(routes["large"], routes=routes)
         # The model steps join triage only when a real provider is configured; the local placeholder
