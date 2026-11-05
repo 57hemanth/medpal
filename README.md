@@ -43,6 +43,7 @@ MedPal automates the routine parts and keeps humans in charge of every decision 
 | Tracing on every run, cost per run, ops metrics, load test at 1,400 req/h | ✅ |
 | Evaluation sets with release gates, held-out generalisation set, calibrated LLM judge harness | ✅ judge needs clinician-reviewed labels |
 | Row-level security for every role, consent with expiry and revocation | ✅ |
+| Appointment emails: confirmation, reminders a day and two hours before, cancellation; only to confirmed addresses | ✅ development inbox (Mailpit); production email provider at deployment |
 | Sign-in by mobile number and one-time code for every role; share records with a family member's number | ✅ SMS gateway at deployment (development shows the code) |
 | Presidio de-identification (English, Hinglish, Indian identifiers) | ✅ |
 | Append-only audit, immutable signed notes | ✅ |
@@ -50,7 +51,7 @@ MedPal automates the routine parts and keeps humans in charge of every decision 
 | Verified against a real model (Gemini): answers, refusals, routing, drafts, fallback, cost | ✅ `make live-check` |
 | Local speech-to-text | 🟡 adapter and upload UI; local model provisioning required |
 
-**Tests:** 274 unit · 64 data · 72 integration (real Postgres) · 13 frontend · 40 real-model checks · evaluation gates · lint, type checks and module-boundary contracts. See [implementation status](docs/implementation-status.md) for what has been verified against a live stack.
+**Tests:** 281 unit · 64 data · 83 integration (real Postgres) · 15 frontend · 40 real-model checks · evaluation gates · lint, type checks and module-boundary contracts. See [implementation status](docs/implementation-status.md) for what has been verified against a live stack.
 
 ## Quick start
 
@@ -58,7 +59,7 @@ Prerequisites: Docker (running), [uv](https://docs.astral.sh/uv/), GNU make.
 
 ```bash
 make install     # Python 3.12 dependencies via uv
-make up          # Postgres (pgvector) on :5433, Redis on :6380
+make up          # Postgres (pgvector) on :5433, Redis on :6380, Mailpit on :8025
 make migrate     # apply the schema
 make seed        # RESETS dev data: 500 doctors, 480k slots, dev identities, sample lab reports
 make web-build   # build the web app once (the API serves it)
@@ -77,6 +78,8 @@ Open **http://localhost:8000** and sign in with a mobile number. In development 
 | 98200 00005 | Doctor (Nikhil Patel) |
 | 98200 00006 | Compliance |
 | 98200 00007 | Pharmacist |
+
+**Appointment emails:** `make up` also starts Mailpit, a development inbox at **http://localhost:8025** (nothing leaves your machine). Asha and Rohan have confirmed addresses, so booking or cancelling as either sends an email within about 15 seconds. Patients manage their address under **Email & reminders**; front desk and compliance see every message under **Patient messages**.
 
 A number that isn't on MedPal yet registers a new patient record. To try sharing, sign in as Asha, open **Sharing & consent**, share with any new number (say 98200 00009), sign out, and sign in with that number: it opens straight into Asha's shared records.
 
