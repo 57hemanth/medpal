@@ -275,8 +275,19 @@ def build_supervisor_graph(specialists: Specialists, planner: Planner | None = N
                 clauses, role, has_transcript=has_transcript, has_conversation=has_conversation
             )
         if role == "patient" and has_conversation:
-            # Asking for other times continues the booking in this chat, whatever the planner said.
-            followups = {i for i, clause in enumerate(clauses) if is_time_followup(clause)}
+            # In a chat that already has a booking under way, a new triage (safety questions again)
+            # needs a new symptom. Asking for other times, or anything without a symptom ("timings for
+            # seema", "which doctor is cheapest?"), stays with the booking, whatever the planner said.
+            followups = {
+                i
+                for i, clause in enumerate(clauses)
+                if is_time_followup(clause)
+                or (
+                    (i, "triage") in assignments
+                    and not _SYMPTOM_ONLY.search(clause)
+                    and match_specialty(clause).needs_clarification
+                )
+            }
             assignments = [(i, s) for i, s in assignments if i not in followups]
             assignments += [(i, "visit") for i in sorted(followups)]
         if role == "doctor" and has_transcript and not any(s == "scribe" for _, s in assignments):

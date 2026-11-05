@@ -264,3 +264,22 @@ async def test_asking_for_other_times_continues_the_booking_even_if_the_model_sa
         conversation_thread_id="triage-1",
     )
     assert [c[0] for c in sp.calls] == ["visit"]
+
+
+async def test_mid_booking_a_message_without_a_symptom_never_starts_a_new_triage():
+    for message in ("timings for seema", "which doctor is cheapest?"):
+        sp = FakeSpecialists()
+        await run(sp, PATIENT, message, FixedPlanner([(0, "triage")]), conversation_thread_id="triage-1")
+        assert [c[0] for c in sp.calls] == ["visit"], message
+
+
+async def test_mid_booking_a_new_symptom_still_starts_a_new_triage():
+    sp = FakeSpecialists()
+    await run(
+        sp,
+        PATIENT,
+        "Now I have an itchy rash on my arm",
+        FixedPlanner([(0, "triage")]),
+        conversation_thread_id="triage-1",
+    )
+    assert [c[0] for c in sp.calls] == ["triage"]

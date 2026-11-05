@@ -18,6 +18,7 @@ from services.agent.scribe.graph import build_scribe_graph
 from services.agent.scribe.tools import PgScribeTools
 from services.agent.triage.assessor import ModelAssessor
 from services.agent.triage.graph import build_triage_graph
+from services.agent.triage.time_reader import TimeRequestReader
 from services.agent.triage.tools import PgTriageTools
 from services.api.routers import assistant, auth, consent, messages, ops, pharmacy, records, scribe, triage
 from services.mcp_server.server import build_mcp_server
@@ -56,6 +57,12 @@ async def _postgres_lifespan(app: FastAPI) -> AsyncIterator[None]:
         # model would add nothing, so development and tests stay rules-only and deterministic.
         assessor = (
             ModelAssessor(app.state.chat_client, deadline_seconds=settings.triage_model_deadline_seconds)
+            if settings.chat_provider != "fake"
+            else None
+        )
+        # Reads booking follow-ups the rules don't recognise ("anything after lunch with the lady doctor?").
+        app.state.time_reader = (
+            TimeRequestReader(app.state.chat_client, deadline_seconds=settings.triage_model_deadline_seconds)
             if settings.chat_provider != "fake"
             else None
         )

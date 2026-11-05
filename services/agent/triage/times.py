@@ -29,7 +29,7 @@ _OTHER = re.compile(
 )
 _PARTS: tuple[tuple[PartOfDay, re.Pattern[str]], ...] = (
     ("morning", re.compile(r"\b(?:morning|subah|suba)\b", re.I)),
-    ("afternoon", re.compile(r"\b(?:afternoon|dopahar|dopehar|noon)\b", re.I)),
+    ("afternoon", re.compile(r"\b(?:afternoon|dopahar|dopehar|noon|after lunch|lunch ke baad)\b", re.I)),
     ("evening", re.compile(r"\b(?:evening|night|after work|shaam|sham)\b", re.I)),
 )
 _WEEKDAYS = ("monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday")
@@ -38,6 +38,9 @@ _MONTHS = ("jan", "feb", "mar", "apr", "may", "jun", "jul", "aug", "sep", "oct",
 _MONTH = "(" + "|".join(_MONTHS) + r")[a-z]*"
 _DAY_MONTH = re.compile(r"\b(\d{1,2})(?:st|nd|rd|th)?\s+(?:of\s+)?" + _MONTH + r"\b", re.I)
 _MONTH_DAY = re.compile(r"\b" + _MONTH + r"\s+(\d{1,2})(?:st|nd|rd|th)?\b", re.I)
+_ALL_DOCTORS = re.compile(
+    r"\b(?:other|different|all|another|any other|more) doctors?\b|\bkisi aur doctor\b|\bdusre doctor", re.I
+)
 _TITLES = re.compile(r"\b(?:dr|doctor|daktar)\.?\s*", re.I)
 
 
@@ -46,6 +49,18 @@ class TimeRequest:
     doctor_id: str | None
     day: date | None
     part_of_day: PartOfDay | None
+    all_doctors: bool = False  # "show me the other doctors": every doctor's soonest again
+
+    def merged(self, fallback: "TimeRequest | None") -> "TimeRequest":
+        """Fill what this request left blank from `fallback`."""
+        if fallback is None:
+            return self
+        return TimeRequest(
+            doctor_id=self.doctor_id or fallback.doctor_id,
+            day=self.day or fallback.day,
+            part_of_day=self.part_of_day or fallback.part_of_day,
+            all_doctors=self.all_doctors or fallback.all_doctors,
+        )
 
     def as_resume(self) -> dict[str, str | None]:
         return {
@@ -74,6 +89,19 @@ def _day(text: str, today: date) -> date | None:
             except ValueError:
                 return None
             return when if when >= today else date(today.year + 1, month, when.day)
+    found = re.search(r"\bthe (\d{1,2})(?:st|nd|rd|th)\b", lowered)  # "on the 12th": this month or next
+    if found:
+        try:
+            when = today.replace(day=int(found.group(1)))
+        except ValueError:
+            return None
+        if when < today:
+            year, month = (today.year + 1, 1) if today.month == 12 else (today.year, today.month + 1)
+            try:
+                when = date(year, month, int(found.group(1)))
+            except ValueError:
+                return None
+        return when
     found = _WEEKDAY.search(text)
     if found:
         target = [d[:3] for d in _WEEKDAYS].index(found.group(1).lower())
@@ -81,7 +109,7 @@ def _day(text: str, today: date) -> date | None:
     return None
 
 
-def _doctor(text: str, doctors: list[dict[str, str]]) -> str | None:
+def match_doctor(text: str, doctors: list[dict[str, str]]) -> str | None:
     """A doctor offered in this chat, named by full, first or last name ("Chetan", "Dr Ranade")."""
     words = set(re.findall(r"[a-z]+", _TITLES.sub(" ", text.lower())))
     matches = []
@@ -93,21 +121,30 @@ def _doctor(text: str, doctors: list[dict[str, str]]) -> str | None:
 
 
 def asks_other_times(text: str) -> bool:
-    """Is this message asking for a different time or day? (The caller rules out symptom messages.)"""
+    """Is this message asking for a different time, day or doctor? (The caller rules out symptoms.)"""
     names_when = bool(_day(text, date(2000, 1, 3))) or any(p.search(text) for _, p in _PARTS)
-    return names_when or bool(_TIME_WORDS.search(text) and _OTHER.search(text))
+    return (
+        names_when
+        or bool(_ALL_DOCTORS.search(text))
+        or bool(_TIME_WORDS.search(text) and _OTHER.search(text))
+    )
 
 
 def parse_time_request(text: str, doctors: list[dict[str, str]], today: date) -> TimeRequest | None:
     """The time request in `text`, or None if it isn't one. `doctors` are those offered in this chat."""
-    doctor_id = _doctor(text, doctors)
+    doctor_id = match_doctor(text, doctors)
     day = _day(text, today)
     part = next((name for name, pattern in _PARTS if pattern.search(text)), None)
     # "Can I see Prasad instead?" asks for that doctor's times too.
     # "timings for seema" names an offered doctor and asks about times: enough on its own.
     if not asks_other_times(text) and not (doctor_id and (_OTHER.search(text) or _TIME_WORDS.search(text))):
         return None
-    return TimeRequest(doctor_id=doctor_id, day=day, part_of_day=part)
+    return TimeRequest(
+        doctor_id=doctor_id,
+        day=day,
+        part_of_day=part,
+        all_doctors=bool(_ALL_DOCTORS.search(text)) and not doctor_id,
+    )
 
 
 def describe_when(day: date | None, part_of_day: str | None) -> str:

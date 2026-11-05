@@ -120,7 +120,13 @@ def _merge_doctors(known: list[dict[str, str]], candidates: list[CandidateView])
     for c in candidates:
         if c["doctor_id"] not in seen:
             seen.add(c["doctor_id"])
-            out.append({"doctor_id": c["doctor_id"], "doctor_name": c["doctor_name"]})
+            out.append(
+                {
+                    "doctor_id": c["doctor_id"],
+                    "doctor_name": c["doctor_name"],
+                    "clinic_name": c["clinic_name"],
+                }
+            )
     return out
 
 

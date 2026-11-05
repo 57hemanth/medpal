@@ -28,6 +28,8 @@ WED = date(2026, 11, 4)  # a Wednesday
         ("Nov 3rd afternoon", TimeRequest(None, date(2027, 11, 3), "afternoon")),  # past date: next year
         ("other timings", TimeRequest(None, None, None)),
         ("timings for seema", TimeRequest("d-seema", None, None)),
+        ("anything on the 12th?", TimeRequest(None, date(2026, 11, 12), None)),
+        ("seema on the 2nd", TimeRequest("d-seema", date(2026, 12, 2), None)),  # past: next month
         ("seema slots", TimeRequest("d-seema", None, None)),
         ("parso shaam", TimeRequest(None, date(2026, 11, 6), "evening")),
     ],
@@ -62,3 +64,17 @@ def test_time_followups_continue_the_booking_but_symptoms_start_a_new_triage():
     assert rule_assign(["other timings please"], "patient", has_transcript=False, has_conversation=True) == [
         (0, "visit")
     ]
+
+
+def test_asking_for_the_other_doctors():
+    assert parse_time_request("Other doctors please", DOCTORS, WED) == TimeRequest(None, None, None, True)
+    assert parse_time_request("kisi aur doctor ka dikhao", DOCTORS, WED) == TimeRequest(
+        None, None, None, True
+    )
+
+
+def test_the_models_reading_wins_and_the_rules_fill_its_gaps():
+    model = TimeRequest("d-prasad", None, "afternoon")
+    rules = TimeRequest(None, date(2026, 11, 12), "morning")
+    assert model.merged(rules) == TimeRequest("d-prasad", date(2026, 11, 12), "afternoon")
+    assert model.merged(None) == model

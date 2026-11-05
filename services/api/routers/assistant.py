@@ -135,11 +135,22 @@ class AppSpecialists:
         values = snapshot.values or {}
         if values.get("auth", {}).get("user_id") != auth["user_id"]:
             return {"status": "not_found", "reply": "I can't find an appointment in this conversation."}
-        request = parse_time_request(
-            question, values.get("doctors_offered") or [], datetime.now(CLINIC_TZ).date()
-        )
-        if request and "present_options" in (snapshot.next or ()):
-            if request.doctor_id is None and not (request.day or request.part_of_day):
+        today = datetime.now(CLINIC_TZ).date()
+        doctors_offered = values.get("doctors_offered") or []
+        choosing = "present_options" in (snapshot.next or ())
+        request = parse_time_request(question, doctors_offered, today)
+        reader = getattr(self._state, "time_reader", None)
+        if choosing and reader is not None:
+            # The model reads the message ("the first one, after lunch on the 12th"); it fills a form and
+            # code checks every field. What it leaves blank the rules fill; if it's down, the rules decide.
+            # One option per doctor card on screen, in order, then doctors offered earlier in this chat
+            # ("the Aundh one" after the list changed).
+            seen = [*(values.get("candidates") or []), *(d for d in doctors_offered if "clinic_name" in d)]
+            cards = list({c["doctor_id"]: c for c in seen}.values())  # first place each doctor appears
+            understood = await reader.read(question, options=cards, doctors=doctors_offered, today=today)
+            request = understood.merged(request) if understood else request
+        if request and choosing:
+            if request.doctor_id is None and not (request.day or request.part_of_day or request.all_doctors):
                 doctors = {c["doctor_id"]: c["doctor_name"] for c in values.get("candidates") or []}
                 if len(doctors) > 1:
                     example = next(iter(doctors.values()))
@@ -176,13 +187,21 @@ class AppSpecialists:
             )
             return {"status": "booked", "reply": answer_visit(question, facts), "thread_id": thread_id}
         if candidates:
-            names = ", ".join(c["doctor_name"] for c in candidates)
-            reply = (
-                f"I found {len(candidates)} {specialty or ''} options: {names}. Choose one above to book it."
-            )
+            names = list(dict.fromkeys(c["doctor_name"] for c in candidates))
+            if len(names) == 1:
+                reply = f"{names[0]}'s times are shown above. Tap one to book it."
+            else:
+                reply = (
+                    f"I found {len(names)} {specialty or ''} options: {', '.join(names)}. "
+                    "Choose one above to book it."
+                )
             about = SPECIALTY_ABOUT.get(specialty or "")
             if about and "specialty" in asked_for(question):
                 reply = f"They are {specialty} specialists: {about}. " + reply
+            if choosing and not asked_for(question):
+                first = candidates[0]["doctor_name"]
+                reply += f" You can also ask for other times, like “more times with {first}”"
+                reply += " or “tomorrow morning”."
             return {"status": "options", "reply": " ".join(reply.split()), "thread_id": thread_id}
         if values.get("outcome") == "emergency":
             return {"status": "emergency", "reply": "This conversation was passed to the emergency desk."}
