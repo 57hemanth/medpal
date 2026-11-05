@@ -13,6 +13,7 @@ from services.platform import audit
 from services.platform.auth import AuthContext
 from services.platform.db import scoped
 from services.platform.egress.client import EgressChatClient, ModelRequest
+from services.scribe.stock import ground_medicines
 
 
 class SoapDraft(BaseModel):
@@ -30,10 +31,6 @@ class SignedNote:
     content_hash: str
 
 
-class ScribeReviewNeeded(ValueError):
-    pass
-
-
 class AlreadySigned(ValueError):
     """Signed notes are immutable; an amendment would be a new version, not a second first version."""
 
@@ -46,17 +43,12 @@ def content_hash(soap_json: dict[str, Any]) -> str:
     return hashlib.sha256(_canonical(soap_json).encode()).hexdigest()
 
 
-def validate_medicine_evidence(draft: SoapDraft, transcript: str) -> None:
-    lowered = transcript.lower()
-    missing = [medicine for medicine in draft.medicines if medicine.lower() not in lowered]
-    if missing:
-        raise ScribeReviewNeeded(f"medicine_not_in_transcript:{','.join(missing)}")
-
-
 DRAFT_INSTRUCTIONS = (
     "Draft a SOAP note from the consultation transcript. Structure what was said; never add a diagnosis, "
     "medicine, dose or test the doctor did not state. If the doctor names a drug class without a molecule "
-    "or dose, write '[doctor to specify]'. List only medicines named in the transcript."
+    "or dose, write it in the plan followed by '[doctor to specify]'. The medicines list holds only drug "
+    "names exactly as spoken in the transcript (for example 'paracetamol'), with no doses, classes or "
+    "placeholders; leave it empty if no drug was named."
 )
 
 
@@ -70,11 +62,17 @@ async def request_draft(chat: EgressChatClient, *, transcript: str, comments: st
     )
 
 
-async def draft_note(chat: EgressChatClient, *, transcript: str, comments: str | None = None) -> SoapDraft:
-    """One-shot draft for the quick-draft endpoint: refuses any medicine absent from the transcript."""
+async def draft_note(
+    chat: EgressChatClient, *, transcript: str, comments: str | None = None
+) -> tuple[SoapDraft, list[str]]:
+    """One-shot draft for the quick-draft endpoint: (draft, rejected medicines).
+
+    Same rule as the review graph: a medicine stays only if the transcript names it; anything else the
+    model listed is returned as rejected, for the doctor to see, rather than failing the whole draft.
+    """
     draft = await request_draft(chat, transcript=transcript, comments=comments)
-    validate_medicine_evidence(draft, transcript)
-    return draft
+    grounded, rejected = ground_medicines(transcript, draft.medicines, formulary=[])
+    return draft.model_copy(update={"medicines": grounded}), rejected
 
 
 async def sign_note(

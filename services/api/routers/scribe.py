@@ -13,7 +13,7 @@ from services.platform.auth import AuthContext
 from services.platform.egress.client import ModelUnavailable
 from services.platform.phi.scrubber import BlockedIdentifier, EgressBlocked
 from services.scribe.encounters import list_consultations, start_encounter
-from services.scribe.service import AlreadySigned, ScribeReviewNeeded, SoapDraft, draft_note, sign_note
+from services.scribe.service import AlreadySigned, SoapDraft, draft_note, sign_note
 from services.scribe.speech import MAX_AUDIO_BYTES, SpeechUnavailable
 
 router = APIRouter(prefix="/api/scribe", tags=["scribe"])
@@ -38,14 +38,17 @@ class SignedOut(BaseModel):
     content_hash: str
 
 
-@router.post("/draft", response_model=SoapDraft)
-async def draft(body: DraftIn, request: Request, auth: Auth) -> SoapDraft:
+class QuickDraftOut(SoapDraft):
+    rejected_medicines: list[str] = Field(default_factory=list)  # named by the model, not by the doctor
+
+
+@router.post("/draft", response_model=QuickDraftOut)
+async def draft(body: DraftIn, request: Request, auth: Auth) -> QuickDraftOut:
     if auth["role"] != "doctor":
         raise HTTPException(status.HTTP_403_FORBIDDEN, "only doctors can draft notes")
     try:
-        return await draft_note(request.app.state.chat_client, transcript=body.transcript)
-    except ScribeReviewNeeded as exc:
-        raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, str(exc)) from exc
+        soap, rejected = await draft_note(request.app.state.chat_client, transcript=body.transcript)
+        return QuickDraftOut(**soap.model_dump(), rejected_medicines=rejected)
     except (EgressBlocked, BlockedIdentifier) as exc:
         raise HTTPException(
             status.HTTP_422_UNPROCESSABLE_ENTITY, "transcript_blocked_by_privacy_gate"

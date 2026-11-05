@@ -1,15 +1,13 @@
-import pytest
-
 from services.platform.egress import EgressChatClient
 from services.platform.egress.providers import FakeChatModel
-from services.scribe.service import ScribeReviewNeeded, SoapDraft, content_hash, draft_note
+from services.scribe.service import SoapDraft, content_hash, draft_note
 
 
 def test_content_hash_is_canonical():
     assert content_hash({"b": 2, "a": 1}) == content_hash({"a": 1, "b": 2})
 
 
-async def test_draft_note_requires_medicines_to_appear_in_transcript():
+async def test_draft_note_rejects_medicines_absent_from_the_transcript_and_reports_them():
     chat = EgressChatClient(
         FakeChatModel(
             structured={
@@ -22,8 +20,9 @@ async def test_draft_note_requires_medicines_to_appear_in_transcript():
         )
     )
 
-    with pytest.raises(ScribeReviewNeeded, match="medicine_not_in_transcript"):
-        await draft_note(chat, transcript="Patient reports cough for two days.")
+    draft, rejected = await draft_note(chat, transcript="Patient reports cough for two days.")
+    assert draft.medicines == []
+    assert rejected == ["Azithromycin"]
 
 
 async def test_draft_note_accepts_transcript_evidence():
@@ -39,7 +38,8 @@ async def test_draft_note_accepts_transcript_evidence():
         )
     )
 
-    draft = await draft_note(chat, transcript="Doctor said continue paracetamol if fever returns.")
+    draft, rejected = await draft_note(chat, transcript="Doctor said continue paracetamol if fever returns.")
 
     assert isinstance(draft, SoapDraft)
     assert draft.medicines == ["paracetamol"]
+    assert rejected == []
