@@ -6,6 +6,7 @@ import {
   HeartPulse,
   LayoutDashboard,
   LayoutList,
+  Mail,
   MessageCircle,
   NotebookPen,
   ScrollText,
@@ -81,6 +82,7 @@ export const navigation: Record<string, NavGroup[]> = {
       label: 'Privacy',
       items: [
         { to: '/sharing', label: 'Sharing & consent', icon: ShieldCheck },
+        { to: '/settings', label: 'Email & reminders', icon: Mail },
       ],
     },
   ],
@@ -124,6 +126,7 @@ export const navigation: Record<string, NavGroup[]> = {
       items: [
         { to: '/queue', label: 'Handoff queue', icon: ClipboardList },
         { to: '/appointments', label: 'Appointments', icon: CalendarDays },
+        { to: '/messages', label: 'Patient messages', icon: Mail },
       ],
     },
   ],
@@ -150,6 +153,7 @@ export const navigation: Record<string, NavGroup[]> = {
       items: [
         { to: '/quality', label: 'Quality', icon: Gauge },
         { to: '/audit', label: 'Audit log', icon: ScrollText },
+        { to: '/messages', label: 'Patient messages', icon: Mail },
         { to: '/records', label: 'Records access', icon: FileText },
       ],
     },

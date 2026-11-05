@@ -1,9 +1,9 @@
 import { useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { CalendarDays, MessageCircle } from 'lucide-react';
+import { CalendarDays, Mail, MessageCircle } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { api } from '../../api/client';
-import type { Appointment } from '../../api/types';
+import type { Appointment, ContactSettings } from '../../api/types';
 import { useAuth } from '../../auth/AuthProvider';
 import {
   Avatar,
@@ -38,6 +38,16 @@ export function AppointmentsPage() {
     queryFn: () =>
       api<Appointment[]>(`/api/appointments?when=${when}&limit=200`, {}, auth),
   });
+  const patient = auth.role === 'patient';
+  const contact = useQuery({
+    queryKey: ['contact', auth.user_id],
+    queryFn: () => api<ContactSettings>('/api/me/contact', {}, auth),
+    enabled: patient,
+  });
+  const remindersOff =
+    patient &&
+    !!contact.data &&
+    !(contact.data.email_verified && contact.data.email_notifications);
   const cancel = useMutation({
     mutationFn: (apptId: string) =>
       api(`/api/appointments/${apptId}/cancel`, { method: 'POST' }, auth),
@@ -75,6 +85,19 @@ export function AppointmentsPage() {
           )
         }
       />
+      {remindersOff && (
+        <div className="mb-5 flex flex-wrap items-center justify-between gap-3 rounded-xl border border-brand-100 bg-brand-50 px-4 py-3 text-[13px] text-brand-900">
+          <span className="flex items-center gap-2">
+            <Mail size={15} aria-hidden="true" />
+            {contact.data?.email && !contact.data.email_verified
+              ? 'Confirm your email to get booking confirmations and reminders.'
+              : 'Get a reminder by email the day before and two hours before each visit.'}
+          </span>
+          <Link to="/settings" className="font-semibold underline">
+            Email settings
+          </Link>
+        </div>
+      )}
       <Card bodyClassName="">
         <div className="flex flex-wrap items-center justify-between gap-3 border-b border-line px-4 py-3">
           <Segmented

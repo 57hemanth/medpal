@@ -26,6 +26,8 @@ import { AuditPage } from '../features/compliance/AuditPage';
 import { QualityPage } from '../features/compliance/QualityPage';
 import { NotesPage } from '../features/notes/NotesPage';
 import { PrescriptionsPage } from '../features/notes/PrescriptionsPage';
+import { MessagesPage } from '../features/messages/MessagesPage';
+import { SettingsPage } from '../features/messages/SettingsPage';
 import { MedicinesPage } from '../features/pharmacy/MedicinesPage';
 import { PharmacyHome } from '../features/pharmacy/PharmacyHome';
 import { StockPage } from '../features/pharmacy/StockPage';
@@ -231,6 +233,7 @@ const ROUTES: Record<string, Record<string, React.ReactNode>> = {
     '/sharing': <ConsentPage />,
     '/notes': <NotesPage />,
     '/prescriptions': <PrescriptionsPage />,
+    '/settings': <SettingsPage />,
   },
   caregiver: {
     '/records': <RecordsPage />,
@@ -245,10 +248,15 @@ const ROUTES: Record<string, Record<string, React.ReactNode>> = {
     '/medicines': <MedicinesPage />,
   },
   pharmacist: { '/stock': <StockPage />, '/medicines': <MedicinesPage /> },
-  desk: { '/queue': <FrontDeskPage />, '/appointments': <AppointmentsPage /> },
+  desk: {
+    '/queue': <FrontDeskPage />,
+    '/appointments': <AppointmentsPage />,
+    '/messages': <MessagesPage />,
+  },
   compliance: {
     '/quality': <QualityPage />,
     '/audit': <AuditPage />,
+    '/messages': <MessagesPage />,
     '/records': <RecordsPage />,
   },
 };

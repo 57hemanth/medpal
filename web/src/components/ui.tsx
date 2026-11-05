@@ -190,6 +190,9 @@ const STATUS: Record<
   out_of_stock: { label: 'Out of stock', tone: 'red' },
   stale: { label: 'Count is old', tone: 'amber' },
   not_held: { label: 'Not held', tone: 'amber' },
+  sent: { label: 'Sent', tone: 'green' },
+  sending: { label: 'Sending', tone: 'blue' },
+  skipped: { label: 'Not sent', tone: 'neutral' },
 };
 
 /** One vocabulary for every status shown in the product. */

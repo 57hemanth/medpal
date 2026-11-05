@@ -207,3 +207,30 @@ export interface Quality {
     summary: string[];
   } | null;
 }
+
+export interface ContactSettings {
+  email: string | null;
+  email_verified: boolean;
+  email_notifications: boolean;
+}
+
+export interface OutboxMessage {
+  notification_id: string;
+  kind:
+    | 'appointment_booked'
+    | 'appointment_cancelled'
+    | 'appointment_reminder_24h'
+    | 'appointment_reminder_2h';
+  channel: 'email';
+  status: 'queued' | 'sending' | 'sent' | 'failed' | 'cancelled' | 'skipped';
+  send_after: string;
+  sent_at: string | null;
+  recipient: string | null;
+  subject: string | null;
+  detail: string | null;
+  attempts: number;
+  created_at: string;
+  starts_at: string | null;
+  patient_name: string | null;
+  doctor_name: string | null;
+}
