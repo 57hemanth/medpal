@@ -37,6 +37,7 @@ MedPal automates the routine parts and keeps humans in charge of every decision 
 | Consultation scribe: doctor interrupt, edit history, redraft, stock-aware prescriptions, signing | ✅ |
 | Pharmacy stock feeds (nightly CSV or real-time API) synced every 15 minutes | ✅ |
 | MCP tool server: slots, booking, medicine stock | ✅ |
+| One assistant: a supervisor runs triage, records and scribe in parallel from one message | ✅ |
 | Model routing by tier with provider fallback; safe degradation when all fail | ✅ |
 | Hybrid deployment: internal network, ingress, allowlisting egress proxy | ✅ proven live by `make boundary-check` |
 | Tracing on every run, cost per run, ops metrics, load test at 1,400 req/h | ✅ |
@@ -47,7 +48,7 @@ MedPal automates the routine parts and keeps humans in charge of every decision 
 | React app for patients, doctors, front desk and consent | ✅ test-login identities; browser OIDC deferred |
 | Local speech-to-text | 🟡 adapter and upload UI; local model provisioning required |
 
-**Tests:** 202 unit · 64 data · 52 integration (real Postgres) · 4 frontend · evaluation gates · lint, type checks and module-boundary contracts. See [implementation status](docs/implementation-status.md) for what has been verified against a live stack.
+**Tests:** 217 unit · 64 data · 55 integration (real Postgres) · 5 frontend · evaluation gates · lint, type checks and module-boundary contracts. See [implementation status](docs/implementation-status.md) for what has been verified against a live stack.
 
 ## Quick start
 
@@ -83,7 +84,16 @@ curl -s localhost:8000/triage/<thread_id>/resume "${H[@]}" \
 
 curl -s localhost:8000/triage "${H[@]}" -d '{"text": "seene mein dard hai"}'   # Hinglish: "chest pain"
 # → status "emergency" with an emergency-desk ticket
+
+curl -s localhost:8000/api/assistant "${H[@]}" \
+  -d '{"message": "My knee has hurt for a week. Also, what was my LDL last time?"}'
+# → triage and records run in parallel; one reply plus each specialist's result and thread id
 ```
+
+### Using a real model (Gemini)
+
+Copy `.env.example` to `.env` and fill in the Gemini block (provider, model ids, API key and prices).
+Text is de-identified before it leaves; without a key, a local placeholder model keeps every flow working.
 
 The dev identity above is **Asha Verma** (patient, Pune), who can also act as caregiver for her mother **Lata**. Other dev logins (front desk, doctor, compliance) are listed by `make seed`.
 
@@ -119,7 +129,8 @@ Start with **[docs/architecture.md](docs/architecture.md)**, which follows a req
 
 | Doc | What you'll learn |
 |---|---|
-| [docs/adr/](docs/adr/) | Eleven design decisions and why: LangGraph, row-level security, booking concurrency, Presidio, the egress boundary, the safety screen, … |
+| [docs/adr/](docs/adr/) | Twelve design decisions and why: LangGraph, row-level security, booking concurrency, Presidio, the egress boundary, the safety screen, … |
+| [docs/roadmap.md](docs/roadmap.md) | Extensions built and proposed, with what each proves |
 | [docs/threat-model.md](docs/threat-model.md) | STRIDE and LLM-specific threats, each with its control and the test that proves it |
 | [docs/privacy-and-compliance.md](docs/privacy-and-compliance.md) | Every privacy obligation mapped to its control and the test that proves it |
 | [docs/data-model/](docs/data-model/) | One page per table: sensitivity, row-level security rule, checks, consumers |
@@ -131,7 +142,7 @@ Start with **[docs/architecture.md](docs/architecture.md)**, which follows a req
 ```
 services/
   api/          FastAPI app, routers, auth dependency
-  agent/        LangGraph graphs (triage/, scribe/)
+  agent/        LangGraph graphs (triage/, scribe/, supervisor/)
   scheduling/   shortlist + booking transaction (advisory lock, capacity, idempotency)
   records/      report ingest, retrieval and cited Q&A
   scribe/       SOAP draft + doctor sign-off

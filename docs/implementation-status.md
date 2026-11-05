@@ -10,6 +10,7 @@ Reviewed against the code on 3 November 2026. **Verified** means a test in this 
 | Records | Upload with pre-storage privacy scan; **queued ingest** (arq on Redis, id only) with **parallel page processing** (LangGraph `Send`, bounded concurrency; [ADR-0009](adr/0009-async-ingest-parallel-pages.md)); RLS-scoped retrieval; explicit patient choice for caregivers; citation verification; safe degradation when the model is unavailable | Semantic embedding model; representative scan-quality evaluation |
 | Scribe | Encounter creation for the doctor's own appointment; **review graph with doctor interrupt** (sign / edit / reject → redraft, max 2); every edit kept as a draft version; medicines grounded in the transcript; **pharmacy stock check** with staleness; signing writes the note and prescriptions in one transaction | Clinical evaluation of drafts |
 | Pharmacy stock | One feed interface with CSV and real-time API adapters sharing contract tests; update-only sync where older readings never overwrite newer ones; 15-minute cron in the worker | A real pharmacy endpoint |
+| Supervisor | `POST /api/assistant`: safety screen first; model labels clauses only (rules fallback); role-limited `Send` fan-out to triage, records and scribe as their own threads; audited delegations; one trace ([ADR-0012](adr/0012-supervisor-with-specialist-graphs.md)) | — (the patient chat sends every new message through the assistant) |
 | MCP tool server | `/mcp` (streamable HTTP) and stdio: `find_appointment_slots`, `book_appointment` (patient only, idempotent), `check_medicine_stock`; same identity resolver as the API | — |
 | Models | Routing by tier (small/large) with **fallback chains** across providers; `ModelUnavailable` degrades to a human path | Production provider contracts |
 | Deployment | **Hybrid boundary** ([ADR-0008](adr/0008-hybrid-deployment-egress-boundary.md)): internal network, nginx ingress, allowlisting CONNECT egress proxy, `make boundary-check` | Real cloud/on-premise target |
@@ -24,13 +25,13 @@ Run on 3 November 2026 against a live local stack.
 
 | Check | Result |
 |---|---|
-| Unit tests | 202 passed |
+| Unit tests | 217 passed |
 | Data tests | 64 passed |
-| Web tests and production build | 4 passed; build clean |
+| Web tests and production build | 5 passed; build clean |
 | Lint, format, mypy, module-boundary contracts | clean |
 | Evaluation gates | recall 100%, over-triage 2%, specialty 100%; held-out rule recall 20% (reported, not a gate; the safety screen covers it) |
-| Integration tests (real Postgres) | 52 passed: RLS, booking concurrency, red team, scribe signing, queued ingest, tracing, MCP |
-| Live API check | 55/55: triage with safety screen, booking, records, consent, scribe review/edit/sign, MCP tools, metrics |
+| Integration tests (real Postgres) | 55 passed: RLS, booking concurrency, red team, scribe signing, queued ingest, tracing, MCP, supervisor |
+| Live API check | 62/62: triage with safety screen, booking, records, consent, scribe review/edit/sign, assistant (supervisor), MCP tools, metrics |
 | Queued ingest with a real worker | upload returns `queued`; the arq worker completes it; the answer cites the right page |
 | Load test (1,400 req/h for 2 min, then 3× for 1 min) | 0% errors; p95 triage 20–33 ms, records 96 ms. **Measured with the local fake model**, so these are the app's and database's own latencies; real model time comes on top |
 | Cost report | works from real spans; cost per consultation is reported as *not computable* until a priced model is configured, rather than estimated |

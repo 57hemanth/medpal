@@ -15,5 +15,6 @@ Each ADR records one decision: the constraint that forced it, the options weighe
 | [0009](0009-async-ingest-parallel-pages.md) | Records ingest on a queue; pages processed in parallel; privacy scan stays at upload |
 | [0010](0010-structured-safety-screen.md) | A structured yes/no safety screen, not free-text rules, is the emergency gate |
 | [0011](0011-in-boundary-tracing.md) | Tracing and cost metering in Postgres, metadata only |
+| [0012](0012-supervisor-with-specialist-graphs.md) | A supervisor that delegates to specialist graphs running as their own threads |
 
 Format: **Status · Context · Options · Decision · Revisit trigger · Consequences (easier / harder) · Proof · Checked on**.

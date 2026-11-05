@@ -24,6 +24,8 @@ STRIDE plus the threats specific to LLM systems. Each row names the control **an
 | Triage/scribe | Resuming someone else's paused run | Elevation of privilege | Thread-ownership check on every resume | `test_cannot_resume_someone_elses_thread` | ✅ |
 | Scribe | A doctor starts or signs a consultation that isn't theirs | Elevation of privilege | Encounter creation limited to the appointment's doctor; signing limited to the encounter's doctor | `test_only_the_appointments_doctor_can_start…` | ✅ |
 | Consent | A patient extends a consent, or grants one on someone else's record | Tampering | Column grant (revoke only); insert policy | `test_patient_can_revoke_but_not_extend_consent` | ✅ |
+| Assistant | A model routing step rewrites a request, adds instructions or names another patient | Elevation of privilege / tampering | The model returns only clause numbers and labels; specialists get the person's own words; role decides which specialists may run | `test_specialists_get_the_patients_own_words_never_model_text`, `test_model_plan_is_used_but_cannot_exceed_the_role_or_invent_clauses` | ✅ |
+| Assistant | Routing delays or drops an emergency | Safety | Red-flag rules run on the whole message before any model; an emergency goes to triage alone | `test_patient_emergency_goes_to_triage_alone_before_any_model` | ✅ |
 | MCP tools | An agent calls tools without an identity | Spoofing | Same identity resolver as the API; headers alone are never trusted as identity | `test_unauthenticated_calls_are_refused` | ✅ |
 
 ## Integrity and accountability

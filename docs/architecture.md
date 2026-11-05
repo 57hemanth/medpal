@@ -157,7 +157,27 @@ feed adapters (nightly CSV or a real-time API) that the worker syncs every 15 mi
 The same scheduling and stock operations are exposed to other agents as an **MCP tool server**
 at `/mcp`, using the same identity resolver as the API. No tool takes a patient id.
 
-## 9. Tracing and cost
+## 9. One assistant: the supervisor
+
+`POST /api/assistant {"message": "My knee has hurt for a week. Also, what was my LDL last time?"}`
+runs several specialists from one message ([ADR-0012](adr/0012-supervisor-with-specialist-graphs.md)):
+
+```
+screen ──(patient emergency)──────────────────────────────► triage only
+   └─► plan: split into clauses → model labels clause numbers (else keyword rules)
+         → role check → Send × N ─► triage ┐
+                                  ─► records├─► combine → one reply + each specialist's result
+                                  ─► scribe ┘
+```
+
+- Red-flag rules run on the whole message first; no model sees a patient emergency.
+- The model returns only clause numbers and labels. Specialists receive the person's own words.
+- Each specialist runs as its own durable thread. A paused triage or scribe run continues on its own
+  endpoint (`/triage/{thread_id}/resume`, `/api/scribe/sessions/{thread_id}/resume`).
+- Each delegation is audited with the specialist's thread id and the supervisor's trace id, and all
+  nodes, supervisor and specialist, land in one trace.
+
+## 10. Tracing and cost
 
 Every graph run and model call writes spans to `trace_span` in Postgres
 ([ADR-0011](adr/0011-in-boundary-tracing.md)): node timings, model id, tokens and cost from the
@@ -169,7 +189,7 @@ and checks p95s against targets.
 See [implementation status](implementation-status.md) for the full distinction between API,
 UI, configuration and unfinished scope, and [adapter setup](adapters.md) for runtime instructions.
 
-## 10. Remaining work
+## 11. Remaining work
 
 - Clinician sign-off on the emergency rules, safety-screen wording and specialty list.
 - Production self-hosted multilingual embeddings (the current embedding adapter is deterministic).
