@@ -11,5 +11,9 @@ Each ADR records one decision: the constraint that forced it, the options weighe
 | [0005](0005-booking-concurrency.md) | Bookings use an advisory lock, a capacity check and client idempotency keys |
 | [0006](0006-presidio-deidentification.md) | Microsoft Presidio, extended for India, de-identifies text before it leaves the boundary |
 | [0007](0007-exact-vector-search-per-patient.md) | Records retrieval uses an exact pgvector scan scoped to one patient, with no ANN index |
+| [0008](0008-hybrid-deployment-egress-boundary.md) | Hybrid deployment: internal network with no route out, one ingress, one allowlisting egress proxy |
+| [0009](0009-async-ingest-parallel-pages.md) | Records ingest on a queue; pages processed in parallel; privacy scan stays at upload |
+| [0010](0010-structured-safety-screen.md) | A structured yes/no safety screen, not free-text rules, is the emergency gate |
+| [0011](0011-in-boundary-tracing.md) | Tracing and cost metering in Postgres, metadata only |
 
 Format: **Status · Context · Options · Decision · Revisit trigger · Consequences (easier / harder) · Proof · Checked on**.

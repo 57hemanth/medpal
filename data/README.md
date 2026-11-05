@@ -48,6 +48,7 @@ Row accounting: 110,527 = 110,516 kept + 11 dropped ✓. Attended rate after cle
 | Specialties | 38 outpatient specialties (a modelling choice) |
 | Doctors | 500, at least 10 per specialty; 49.8% female; unique names; languages follow the city |
 | Slots | 480,000 = 500 doctors × 60 working days × 16 fifteen-minute slots; no Sundays; always inside clinic hours |
+| Formulary | 25 common generics stocked at every clinic; about 15% of clinic/medicine pairs out of stock so the scribe's stock flags are exercised; `as_of` is stamped at seed time like a nightly feed |
 
 Why code and not an LLM: see [ADR-0004](../docs/adr/0004-generated-directory-in-code.md). Every run writes `generated_manifest.json` (seed, version, counts, bias audit). Tests: `data/synthetic/tests/test_generate.py`.
 

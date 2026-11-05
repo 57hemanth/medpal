@@ -30,20 +30,24 @@ MedPal automates the routine parts and keeps humans in charge of every decision 
 
 | Feature | State |
 |---|---|
-| Triage → shortlist → patient picks a slot → booking (pause/resume across app instances) | ✅ working |
-| Emergency gate with human handoff | 🟡 draft rule set working; clinician sign-off still external |
-| Specialty matching | 🟡 deterministic draft matcher; model classifier/evals can replace it |
+| Triage → structured safety screen → clarifying question → shortlist → patient picks a slot → booking (pause/resume across app instances) | ✅ |
+| Emergency gate: red-flag rules plus a seven-question safety screen, with human handoff | ✅ evaluation-gated; clinician sign-off still external |
+| Records Q&A with verified citations; caregiver must pick one patient | ✅ |
+| Queued records ingest with pages processed in parallel (LangGraph `Send`, bounded) | ✅ code and tests; queue tests need Postgres + Redis |
+| Consultation scribe: doctor interrupt, edit history, redraft, stock-aware prescriptions, signing | ✅ |
+| Pharmacy stock feeds (nightly CSV or real-time API) synced every 15 minutes | ✅ |
+| MCP tool server: slots, booking, medicine stock | ✅ |
+| Model routing by tier with provider fallback; safe degradation when all fail | ✅ |
+| Hybrid deployment: internal network, ingress, allowlisting egress proxy | ✅ unit-tested; `make boundary-check` for the live proof |
+| Tracing on every run, cost per run, ops metrics, load test at 1,400 req/h | ✅ |
+| Evaluation sets with release gates, held-out generalisation set, calibrated LLM judge harness | ✅ judge needs clinician-reviewed labels |
 | Row-level security for every role, consent with expiry and revocation | ✅ |
 | Presidio de-identification (English, Hinglish, Indian identifiers) | ✅ |
 | Append-only audit, immutable signed notes | ✅ |
-| Records Q&A with citations | ✅ working with local embeddings and verified citations |
-| Consultation scribe with doctor sign-off | ✅ working API path with immutable signed notes |
-| OIDC login, consent API, front-desk console, tracing | 🟡 OIDC shape, consent API and front-desk APIs working; tracing planned |
-| React app | 🟡 test-login page and feature pages working; full sign/edit and admin UI pending |
-| Record persistence, PDF extraction and local OCR | ✅ filesystem/S3 adapters; page-aware extraction and pre-storage validation |
-| Local speech-to-text | 🟡 adapter and upload UI implemented; local model provisioning required |
+| React app for patients, doctors, front desk and consent | ✅ test-login identities; browser OIDC deferred |
+| Local speech-to-text | 🟡 adapter and upload UI; local model provisioning required |
 
-**Tests:** 112 unit · 64 data · 38 integration (real Postgres) · 1 frontend · lint, type checks and module-boundary contracts.
+**Tests:** 200 unit · 64 data · 49 integration (real Postgres) · 4 frontend · evaluation gates · lint, type checks and module-boundary contracts. See [implementation status](docs/implementation-status.md) for what has been verified against a live stack.
 
 ## Quick start
 
@@ -66,6 +70,11 @@ H=(-H 'content-type: application/json' \
    -H 'X-Dev-Patient-Id: 00000000-0000-0000-0000-0000000b0001')
 
 curl -s localhost:8000/triage "${H[@]}" -d '{"text": "knee pain for a week"}'
+# → status "awaiting_safety_check" with seven yes/no questions
+
+curl -s localhost:8000/triage/<thread_id>/resume "${H[@]}" -d '{"safety_answers":
+  {"chest_pain": false, "breathing": false, "unconscious": false, "stroke": false,
+   "bleeding": false, "poisoning": false, "self_harm": false}}'
 # → status "awaiting_choice" with three Pune doctors and times like "Mon 9 Nov, 09:00"
 
 curl -s localhost:8000/triage/<thread_id>/resume "${H[@]}" \
@@ -89,7 +98,20 @@ make test-int    # real Postgres; builds a throwaway medpal_test database
 make lint        # ruff, mypy, import-linter module boundaries
 make web-build   # React type-check + production build
 make web-test    # React unit tests
+make eval        # evaluation sets; fails if a release gate is missed
 ```
+
+### Running like production
+
+```bash
+make worker          # queued records ingest + pharmacy stock sync (needs Redis)
+make up-boundary     # internal network, nginx ingress, allowlisting egress proxy
+make boundary-check  # proves the API has no route out except the allowlisted model hosts
+make load-test       # 1,400 requests/hour, then a 3x burst; p95 per endpoint
+make cost-report     # cost per run from real traces
+```
+
+Other agents can use MedPal's scheduling and stock tools over MCP at `http://localhost:8000/mcp`.
 
 ## How it works
 
@@ -97,7 +119,8 @@ Start with **[docs/architecture.md](docs/architecture.md)**, which follows a req
 
 | Doc | What you'll learn |
 |---|---|
-| [docs/adr/](docs/adr/) | Seven design decisions and why: LangGraph, row-level security, booking concurrency, Presidio, … |
+| [docs/adr/](docs/adr/) | Eleven design decisions and why: LangGraph, row-level security, booking concurrency, Presidio, the egress boundary, the safety screen, … |
+| [docs/threat-model.md](docs/threat-model.md) | STRIDE and LLM-specific threats, each with its control and the test that proves it |
 | [docs/privacy-and-compliance.md](docs/privacy-and-compliance.md) | Every privacy obligation mapped to its control and the test that proves it |
 | [docs/data-model/](docs/data-model/) | One page per table: sensitivity, row-level security rule, checks, consumers |
 | [docs/lessons-learned.md](docs/lessons-learned.md) | Real bugs caught while building it, and the tests that now guard against them |
@@ -108,13 +131,17 @@ Start with **[docs/architecture.md](docs/architecture.md)**, which follows a req
 ```
 services/
   api/          FastAPI app, routers, auth dependency
-  agent/        LangGraph graphs (triage/ …)
+  agent/        LangGraph graphs (triage/, scribe/)
   scheduling/   shortlist + booking transaction (advisory lock, capacity, idempotency)
   records/      report ingest, retrieval and cited Q&A
   scribe/       SOAP draft + doctor sign-off
-  platform/     config, db pools + RLS sessions, auth context, audit, phi/ (Presidio)
+  platform/     config, db pools + RLS sessions, identity, audit, phi/ (Presidio), egress/, tracing
+  mcp_server/   MCP tools for other agents (slots, booking, stock)
+  egress_proxy/ allowlisting CONNECT proxy for the deployment boundary
+  worker/       arq worker: queued ingest, pharmacy stock sync
 data/           transforms for public datasets, synthetic network generator
-infra/          docker-compose, Dockerfile, Alembic migrations, seed script
+evals/          evaluation sets, gates, LLM-judge calibration
+infra/          docker-compose (dev and boundary), nginx, Dockerfile, migrations, seed, load/cost/boundary scripts
 tests/          unit (in-memory) and integration (real Postgres)
 docs/           architecture, ADRs, privacy, data model, lessons learned
 ```
@@ -127,7 +154,7 @@ The API connects as `medpal_app`, which is **not** a superuser and has no `BYPAS
 
 See [implementation status](docs/implementation-status.md) for a code-checked scope inventory and [adapter setup](docs/adapters.md) for persistent storage, OCR and speech configuration.
 
-1. Replace draft triage rules with clinician-signed rules and larger evaluation sets.
+1. Clinician sign-off on the emergency rules, safety-screen wording and judge calibration labels.
 2. Swap the deterministic local embedding adapter for a production self-hosted multilingual model.
-3. Provision private S3 and a local speech model; move inline ingestion to a durable worker.
-4. Add stock-aware prescriptions, retention jobs and self-hosted tracing.
+3. Rate limiting, checkpoint retention and patient erasure.
+4. SMS delivery with fixed templates; browser OIDC login.
