@@ -181,7 +181,8 @@ function AssistantAvatar() {
 }
 
 export function TriagePage() {
-  const { auth } = useAuth();
+  const { auth, me } = useAuth();
+  const firstName = me.name?.split(/\s+/)[0];
   const client = useQueryClient();
   const [text, setText] = useState('');
   const [messages, setMessages] = useState<Message[]>([]);
@@ -464,7 +465,10 @@ export function TriagePage() {
               <div className="max-w-[90%]">
                 <p className="mb-2 text-xs font-semibold">MedPal</p>
                 <div className="text-sm leading-7 text-slate-700">
-                  <p>Hi Asha. Let’s take care of you.</p>
+                  <p>
+                    Hi{firstName ? ` ${firstName}` : ''}. Let’s take care of
+                    you.
+                  </p>
                   <p className="mt-2">
                     Tell me what’s been bothering you and for how long. I’ll
                     help you find the right doctor and a time that works.

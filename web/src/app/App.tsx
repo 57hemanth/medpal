@@ -3,8 +3,11 @@ import {
   BookOpen,
   Check,
   ChevronsUpDown,
+  LoaderCircle,
+  LogOut,
   Menu,
   ShieldCheck,
+  UserRound,
   X,
 } from 'lucide-react';
 import {
@@ -15,7 +18,8 @@ import {
   useLocation,
   useNavigate,
 } from 'react-router-dom';
-import { useSession } from '../auth/AuthProvider';
+import { useAuth, useAuthState } from '../auth/AuthProvider';
+import { SignInPage } from '../features/auth/SignInPage';
 import { Badge, Brand } from '../components/ui';
 import { AppointmentsPage } from '../features/appointments/AppointmentsPage';
 import { AuditPage } from '../features/compliance/AuditPage';
@@ -35,15 +39,22 @@ import { RecordsPage } from '../features/records/RecordsPage';
 import { ScribePage } from '../features/scribe/ScribePage';
 import { TriagePage } from '../features/triage/TriagePage';
 import type { Role } from '../api/client';
-import { navigation, profileFor, profiles } from './profiles';
+import { navigation, profileFor } from './profiles';
 import '../styles/app.css';
 
-function ProfileSwitcher({ onSwitch }: { onSwitch?: () => void }) {
-  const { auth, switchTo } = useSession();
+function AccountMenu({ onSwitch }: { onSwitch?: () => void }) {
+  const { me, auth, switchTo, signOut } = useAuth();
   const navigate = useNavigate();
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
   const current = profileFor(auth.role);
+  const name = me.name ?? me.phone ?? current.title;
+  const initials = name
+    .split(/\s+/)
+    .filter((part) => /^[A-Za-z]/.test(part))
+    .slice(0, 2)
+    .map((part) => part[0]!.toUpperCase())
+    .join('');
   useEffect(() => {
     if (!open) return;
     const close = (event: MouseEvent | KeyboardEvent) => {
@@ -61,9 +72,9 @@ function ProfileSwitcher({ onSwitch }: { onSwitch?: () => void }) {
       document.removeEventListener('keydown', close);
     };
   }, [open]);
-  const choose = (role: Role) => {
+  const choose = async (role: Role) => {
     setOpen(false);
-    switchTo(role);
+    if (role !== auth.role) await switchTo(role);
     navigate('/');
     onSwitch?.();
   };
@@ -76,14 +87,15 @@ function ProfileSwitcher({ onSwitch }: { onSwitch?: () => void }) {
         className="flex w-full items-center gap-2.5 rounded-lg border border-line bg-white p-2 text-left hover:bg-canvas"
       >
         <span className="flex size-8 shrink-0 items-center justify-center rounded-md bg-brand-50 text-[11px] font-bold text-brand-800">
-          {current.initials}
+          {initials || <UserRound size={15} aria-hidden="true" />}
         </span>
         <span className="min-w-0 flex-1">
           <span className="block truncate text-[13px] font-semibold">
-            {current.name}
+            {name}
           </span>
           <span className="block truncate text-[11px] text-muted">
             {current.title}
+            {me.phone ? ` · ${me.phone}` : ''}
           </span>
         </span>
         <ChevronsUpDown size={14} className="text-subtle" aria-hidden="true" />
@@ -91,44 +103,52 @@ function ProfileSwitcher({ onSwitch }: { onSwitch?: () => void }) {
       {open && (
         <div
           role="menu"
-          aria-label="Switch profile"
+          aria-label="Account"
           className="absolute bottom-full left-0 z-40 mb-2 w-full min-w-60 rounded-xl border border-line bg-white p-1.5"
           style={{ boxShadow: 'var(--shadow-pop)' }}
         >
-          <p className="eyebrow px-2.5 pb-1.5 pt-1">Switch profile</p>
-          {profiles.map((profile) => (
-            <button
-              key={profile.role}
-              role="menuitemradio"
-              aria-checked={profile.role === auth.role}
-              onClick={() => choose(profile.role)}
-              className="flex w-full items-center gap-2.5 rounded-lg px-2.5 py-2 text-left hover:bg-canvas"
-            >
-              <profile.icon
-                size={15}
-                className="text-muted"
-                aria-hidden="true"
-              />
-              <span className="min-w-0 flex-1">
-                <span className="block truncate text-[13px] font-medium">
-                  {profile.name}
-                </span>
-                <span className="block truncate text-[11px] text-muted">
-                  {profile.title}
-                </span>
-              </span>
-              {profile.role === auth.role && (
-                <Check
-                  size={14}
-                  className="text-brand-700"
-                  aria-hidden="true"
-                />
-              )}
-            </button>
-          ))}
-          <p className="border-t border-line px-2.5 pb-1 pt-2 text-[11px] leading-relaxed text-muted">
-            Profiles use synthetic data. Sign-in is added at deployment.
-          </p>
+          {me.roles.length > 1 && (
+            <>
+              <p className="eyebrow px-2.5 pb-1.5 pt-1">Switch role</p>
+              {me.roles.map((role) => {
+                const profile = profileFor(role);
+                return (
+                  <button
+                    key={role}
+                    role="menuitemradio"
+                    aria-checked={role === auth.role}
+                    onClick={() => void choose(role)}
+                    className="flex w-full items-center gap-2.5 rounded-lg px-2.5 py-2 text-left hover:bg-canvas"
+                  >
+                    <profile.icon
+                      size={15}
+                      className="text-muted"
+                      aria-hidden="true"
+                    />
+                    <span className="min-w-0 flex-1 truncate text-[13px] font-medium">
+                      {profile.title}
+                    </span>
+                    {role === auth.role && (
+                      <Check
+                        size={14}
+                        className="text-brand-700"
+                        aria-hidden="true"
+                      />
+                    )}
+                  </button>
+                );
+              })}
+              <div className="my-1 border-t border-line" />
+            </>
+          )}
+          <button
+            role="menuitem"
+            onClick={() => void signOut().then(() => navigate('/'))}
+            className="flex w-full items-center gap-2.5 rounded-lg px-2.5 py-2 text-left text-[13px] font-medium hover:bg-canvas"
+          >
+            <LogOut size={15} className="text-muted" aria-hidden="true" />
+            Sign out
+          </button>
         </div>
       )}
     </div>
@@ -136,7 +156,7 @@ function ProfileSwitcher({ onSwitch }: { onSwitch?: () => void }) {
 }
 
 function Sidebar({ onNavigate }: { onNavigate?: () => void }) {
-  const { auth } = useSession();
+  const { auth } = useAuth();
   return (
     <div className="flex h-full flex-col">
       <div className="flex items-center justify-between px-4 pb-4 pt-5">
@@ -182,7 +202,7 @@ function Sidebar({ onNavigate }: { onNavigate?: () => void }) {
           Identified data stays in the clinic&apos;s boundary. Every access is
           audited.
         </div>
-        <ProfileSwitcher onSwitch={onNavigate} />
+        <AccountMenu onSwitch={onNavigate} />
       </div>
     </div>
   );
@@ -234,7 +254,19 @@ const ROUTES: Record<string, Record<string, React.ReactNode>> = {
 };
 
 export function App() {
-  const { auth } = useSession();
+  const state = useAuthState();
+  if (state.status === 'loading')
+    return (
+      <div className="flex min-h-dvh items-center justify-center text-muted">
+        <LoaderCircle size={20} className="animate-spin" aria-label="Loading" />
+      </div>
+    );
+  if (state.status === 'signed_out') return <SignInPage />;
+  return <Workspace />;
+}
+
+function Workspace() {
+  const { auth } = useAuth();
   const { pathname } = useLocation();
   const mainRef = useRef<HTMLElement>(null);
   const [drawer, setDrawer] = useState(false);

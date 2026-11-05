@@ -84,7 +84,8 @@ function QuickAction({
 
 /** Home for patients and caregivers: what's next, what's new, who can see what. */
 export function PatientHome() {
-  const { auth } = useAuth();
+  const { auth, me } = useAuth();
+  const firstName = me.name?.split(/\s+/)[0];
   const caregiver = auth.role === 'caregiver';
   const [viewing, setViewing] = useState<{ id: string; title: string } | null>(
     null,
@@ -124,10 +125,10 @@ export function PatientHome() {
     <>
       <PageHeader
         eyebrow={caregiver ? 'Family care' : 'Home'}
-        title={`${greeting()}, Asha`}
+        title={firstName ? `${greeting()}, ${firstName}` : greeting()}
         description={
           caregiver
-            ? 'You are viewing records that Lata Verma has shared with you.'
+            ? 'You are viewing records a family member has shared with you.'
             : 'Find the right doctor, keep your reports in one place, and decide who can see them.'
         }
       />

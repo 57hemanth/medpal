@@ -1,6 +1,7 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { render, screen, within } from '@testing-library/react';
-import { expect, test, vi } from 'vitest';
+import { cleanup, render, screen, within } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
+import { afterEach, expect, test, vi } from 'vitest';
 import { api } from '../../api/client';
 import { ConsentPage } from './ConsentPage';
 
@@ -14,6 +15,8 @@ vi.mock('../../auth/AuthProvider', () => ({
     },
   }),
 }));
+
+afterEach(cleanup);
 
 const later = new Date(Date.now() + 30 * 86_400_000).toISOString();
 
@@ -60,4 +63,36 @@ test('only consents on your own record can be revoked', async () => {
   expect(
     within(incoming).queryByRole('button', { name: /Revoke/ }),
   ).not.toBeInTheDocument();
+});
+
+test('a patient shares access by mobile number', async () => {
+  vi.mocked(api).mockReset();
+  vi.mocked(api).mockResolvedValue([]);
+  render(
+    <QueryClientProvider client={new QueryClient()}>
+      <ConsentPage />
+    </QueryClientProvider>,
+  );
+  const user = userEvent.setup();
+  const share = screen.getByRole('button', { name: /Share access/ });
+  expect(share).toBeDisabled();
+  await user.type(screen.getByLabelText('Mobile number'), '98200 00009');
+  await user.click(screen.getByRole('button', { name: '1 month' }));
+  await user.click(share);
+  expect(vi.mocked(api)).toHaveBeenCalledWith(
+    '/api/consents/share',
+    {
+      method: 'POST',
+      body: JSON.stringify({
+        phone: '98200 00009',
+        scope: ['records:read'],
+        purpose: 'Family care',
+        days: 30,
+      }),
+    },
+    expect.objectContaining({ role: 'patient' }),
+  );
+  expect(await screen.findByRole('status')).toHaveTextContent(
+    'Shared with 98200 00009',
+  );
 });

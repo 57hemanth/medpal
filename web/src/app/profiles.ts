@@ -20,54 +20,40 @@ import {
 } from 'lucide-react';
 import type { Role } from '../api/client';
 
-/** The workspace profiles available until sign-in is added. Each maps to a seeded synthetic identity. */
+/** How each role is labelled in the workspace. The signed-in person's own name comes from /api/me. */
 export const profiles: {
   role: Role;
-  name: string;
-  initials: string;
   title: string;
   icon: LucideIcon;
 }[] = [
   {
     role: 'patient',
-    name: 'Asha Verma',
-    initials: 'AV',
     title: 'Patient',
     icon: HeartPulse,
   },
   {
     role: 'caregiver',
-    name: 'Asha Verma',
-    initials: 'AV',
-    title: 'Caregiver for Lata Verma',
+    title: 'Caregiver',
     icon: Users,
   },
   {
     role: 'doctor',
-    name: 'Dr. General Medicine',
-    initials: 'DR',
     title: 'Doctor',
     icon: Stethoscope,
   },
   {
     role: 'desk',
-    name: 'Front desk',
-    initials: 'FD',
-    title: 'Clinic operations',
+    title: 'Front desk',
     icon: LayoutList,
   },
   {
     role: 'pharmacist',
-    name: 'Pharmacy',
-    initials: 'PH',
-    title: 'Pharmacist, Hinjewadi Clinic',
+    title: 'Pharmacist',
     icon: Pill,
   },
   {
     role: 'compliance',
-    name: 'Compliance',
-    initials: 'CO',
-    title: 'Privacy & quality',
+    title: 'Compliance',
     icon: ShieldCheck,
   },
 ];

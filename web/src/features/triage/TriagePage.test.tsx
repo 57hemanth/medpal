@@ -21,6 +21,7 @@ vi.mock('../../auth/AuthProvider', () => ({
       role: 'patient',
       acting_for_patient_id: 'patient',
     },
+    me: { name: 'Asha Verma' },
   }),
 }));
 
