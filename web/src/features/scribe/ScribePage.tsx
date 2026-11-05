@@ -220,6 +220,12 @@ export function ScribePage() {
           </p>
         ) : (
           <ul className="divide-y divide-line">
+            {consultations.every((item) => item.signed) && (
+              <li className="px-6 py-3 text-xs text-muted">
+                Every consultation here is already signed. New ones appear as
+                patients book with you; signed notes can't be drafted again.
+              </li>
+            )}
             {consultations.map((item) => (
               <li
                 key={item.appt_id}
@@ -311,7 +317,7 @@ export function ScribePage() {
               <span className="text-xs text-muted">
                 {encounterId
                   ? `For ${consultation?.patient_name ?? 'the selected patient'}`
-                  : 'Choose a consultation first'}
+                  : 'Start a consultation in step 1 first'}
               </span>
               <Button
                 onClick={() => void generate()}

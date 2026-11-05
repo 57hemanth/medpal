@@ -85,13 +85,14 @@ def _identities(conn: psycopg.Connection) -> None:
     conn.execute(
         "INSERT INTO app_user (user_id, role, doctor_id) VALUES (%s, 'doctor', %s)", (DOCTOR_USER, doctor[0])
     )
-    # Rohan has a desk-booked appointment with that doctor, so the scribe has a consultation to open.
-    conn.execute(
-        "INSERT INTO appointment (patient_id, slot_id, status, source, idempotency_key, created_by)"
-        " SELECT %s, slot_id, 'booked', 'desk', 'seed-scribe-demo', %s FROM slot"
-        " WHERE doctor_id = %s AND starts_at > now() ORDER BY starts_at LIMIT 1",
-        (ROHAN_PATIENT, DESK_USER, doctor[0]),
-    )
+    # Three desk-booked consultations with that doctor, so the scribe can be tried more than once.
+    for position, patient in enumerate((ROHAN_PATIENT, ASHA_PATIENT, MOTHER_PATIENT)):
+        conn.execute(
+            "INSERT INTO appointment (patient_id, slot_id, status, source, idempotency_key, created_by)"
+            " SELECT %s, slot_id, 'booked', 'desk', %s, %s FROM slot"
+            " WHERE doctor_id = %s AND starts_at > now() ORDER BY starts_at OFFSET %s LIMIT 1",
+            (patient, f"seed-scribe-demo-{position}", DESK_USER, doctor[0], position),
+        )
     # Lata grants her daughter Asha read access to her records for 180 days.
     now = datetime.now(UTC)
     conn.execute(
@@ -117,7 +118,7 @@ def main() -> None:
         _identities(conn)
     print("loaded:", ", ".join(f"{t}={n:,}" for t, n in counts.items()))
     print("dev identities: Asha (patient + caregiver for her mother Lata), Rohan, desk, doctor, compliance")
-    print("the doctor has one consultation booked with Rohan, ready for the scribe")
+    print("the doctor has three consultations (Rohan, Asha, Lata) ready for the scribe")
     print(
         "try: curl -s localhost:8000/triage -H 'content-type: application/json' "
         f"-H 'X-Dev-User-Id: {ASHA_USER}' -H 'X-Dev-Role: patient' -H 'X-Dev-Patient-Id: {ASHA_PATIENT}' "
