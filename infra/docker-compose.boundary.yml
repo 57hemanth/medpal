@@ -1,0 +1,85 @@
+# Hybrid deployment topology (ADR-0008): identified data and its processing stay inside an internal
+# network with NO route to the internet. One way in (ingress), one way out (allowlisted egress proxy).
+#
+#   make up-boundary          then open http://localhost:8000
+#
+#   public ── ingress (nginx) ──► api, worker ──► postgres, redis        [boundary: internal network]
+#   public ◄── egress proxy (CONNECT allowlist) ◄── api (HTTPS_PROXY)
+name: medpal-boundary
+
+networks:
+  boundary:
+    internal: true        # Docker gives this network no gateway: containers on it cannot reach out
+  public: {}
+
+x-app-env: &app-env
+  MEDPAL_ENV: dev
+  MEDPAL_DATABASE_URL: postgresql://medpal_app:medpal_app@postgres:5432/medpal
+  MEDPAL_MIGRATION_DATABASE_URL: postgresql://medpal:medpal@postgres:5432/medpal
+  MEDPAL_OBJECT_STORE_DIRECTORY: /app/objects
+  MEDPAL_REDIS_URL: redis://redis:6379
+  MEDPAL_INGEST_MODE: queue
+  # Model SDKs honour these: hosted calls go through the egress proxy, internal services do not.
+  HTTPS_PROXY: http://egress:8888
+  HTTP_PROXY: http://egress:8888
+  NO_PROXY: postgres,redis,localhost,127.0.0.1
+
+services:
+  postgres:
+    image: pgvector/pgvector:pg17
+    environment: { POSTGRES_USER: medpal, POSTGRES_PASSWORD: medpal, POSTGRES_DB: medpal }
+    networks: [boundary]
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      - ./postgres/init:/docker-entrypoint-initdb.d:ro
+    healthcheck: { test: ["CMD-SHELL", "pg_isready -U medpal -d medpal"], interval: 3s, retries: 20 }
+
+  redis:
+    image: redis:7-alpine
+    networks: [boundary]
+    healthcheck: { test: ["CMD", "redis-cli", "ping"], interval: 3s, retries: 20 }
+
+  egress:
+    build: { context: .., dockerfile: infra/Dockerfile }
+    networks: [boundary, public]
+    environment:
+      MEDPAL_EGRESS_ALLOWLIST: ${MEDPAL_EGRESS_ALLOWLIST:-generativelanguage.googleapis.com:443,api.openai.com:443,api.anthropic.com:443}
+    command: ["python", "-m", "services.egress_proxy.proxy", "--port", "8888"]
+
+  api:
+    build: { context: .., dockerfile: infra/Dockerfile }
+    networks: [boundary]          # no public network: the API itself has no route out
+    environment:
+      <<: *app-env
+      MEDPAL_CHAT_PROVIDER: ${MEDPAL_CHAT_PROVIDER:-fake}
+      MEDPAL_CHAT_MODEL: ${MEDPAL_CHAT_MODEL:-medpal-fake}
+      MEDPAL_CHAT_API_KEY: ${MEDPAL_CHAT_API_KEY:-}
+      PORT: 8000
+    volumes: [objects:/app/objects]
+    depends_on:
+      postgres: { condition: service_healthy }
+      redis: { condition: service_healthy }
+      egress: { condition: service_started }
+    command: >
+      sh -c "alembic upgrade head && uvicorn services.api.main:app --host 0.0.0.0 --port 8000"
+
+  worker:
+    build: { context: .., dockerfile: infra/Dockerfile }
+    networks: [boundary]
+    environment: *app-env
+    volumes: [objects:/app/objects]
+    depends_on:
+      postgres: { condition: service_healthy }
+      redis: { condition: service_healthy }
+    command: ["arq", "services.worker.WorkerSettings"]
+
+  ingress:
+    image: nginx:1.27-alpine
+    networks: [public, boundary]
+    ports: ["8000:8000"]
+    volumes: [./nginx/ingress.conf:/etc/nginx/conf.d/default.conf:ro]
+    depends_on: [api]
+
+volumes:
+  pgdata:
+  objects:

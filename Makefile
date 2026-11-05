@@ -1,7 +1,7 @@
 COMPOSE := docker compose -f infra/docker-compose.yml
 RUN := uv run
 
-.PHONY: help install up up-all down reset migrate api web-install web-build web-test test test-unit test-int test-data lint fmt check data seed generate
+.PHONY: eval worker cost-report load-test up-boundary boundary-check help install up up-all down reset migrate api web-install web-build web-test test test-unit test-int test-data lint fmt check data seed generate
 
 help:            ## list targets
 	@grep -E '^[a-z-]+:.*##' $(MAKEFILE_LIST) | awk -F':.*## ' '{printf "  %-10s %s\n", $$1, $$2}'
@@ -18,6 +18,12 @@ up:              ## start Postgres + Redis
 up-all:          ## start the data services and the API container
 	$(COMPOSE) --profile app up -d --build --wait
 
+up-boundary:     ## hybrid deployment topology: internal network, ingress + allowlisted egress only
+	docker compose -f infra/docker-compose.boundary.yml up -d --build --wait
+
+boundary-check:  ## prove the API container has no route out except the allowlisted proxy
+	$(RUN) python -m infra.scripts.boundary_check
+
 down:            ## stop containers (keeps data)
 	$(COMPOSE) --profile app down
 
@@ -32,6 +38,9 @@ seed:            ## RESET dev data and load the generated network (500 doctors, 
 
 generate:        ## regenerate the synthetic network and slot calendar (seeded, reproducible)
 	$(RUN) --group data python -m data.synthetic.generate
+
+worker:          ## run the records ingest worker locally (needs Redis: make up)
+	$(RUN) arq services.worker.WorkerSettings
 
 api:             ## run the API locally with reload
 	$(RUN) uvicorn services.api.main:app --reload --port 8000
@@ -52,6 +61,15 @@ test-data:       ## data transform checks (full-dataset checks skip if raw files
 
 test-int:        ## integration tests (need `make up migrate`; skipped if Postgres is down)
 	$(RUN) pytest tests/integration -q -rs
+
+eval:            ## run the evaluation sets and enforce the release gates
+	$(RUN) python -m evals.run --check
+
+cost-report:     ## cost sheet from real traces (needs a running stack with traffic)
+	$(RUN) python -m infra.scripts.cost_report
+
+load-test:       ## 1,400 req/h then a 3x burst against a running API; p95s per endpoint
+	$(RUN) python -m infra.scripts.load_test --base http://localhost:8000
 
 lint:            ## ruff + mypy + module-boundary contracts
 	$(RUN) ruff check .

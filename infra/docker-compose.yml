@@ -37,14 +37,35 @@ services:
       MEDPAL_DATABASE_URL: postgresql://medpal_app:medpal_app@postgres:5432/medpal          # app: RLS applies
       MEDPAL_MIGRATION_DATABASE_URL: postgresql://medpal:medpal@postgres:5432/medpal      # owner: migrations only
       MEDPAL_OBJECT_STORE_DIRECTORY: /app/objects
+      MEDPAL_INGEST_MODE: queue
+      MEDPAL_REDIS_URL: redis://redis:6379
       PORT: 8000
     volumes:
       - objects:/app/objects
     ports: ["8000:8000"]
     depends_on:
       postgres: { condition: service_healthy }
+      redis: { condition: service_healthy }
     command: >
       sh -c "alembic upgrade head && uvicorn services.api.main:app --host 0.0.0.0 --port $${PORT:-8000}"
+
+  worker:
+    build:
+      context: ..
+      dockerfile: infra/Dockerfile
+    profiles: ["app"]
+    environment:
+      MEDPAL_ENV: dev
+      MEDPAL_DATABASE_URL: postgresql://medpal_app:medpal_app@postgres:5432/medpal
+      MEDPAL_OBJECT_STORE_DIRECTORY: /app/objects
+      MEDPAL_REDIS_URL: redis://redis:6379
+      MEDPAL_INGEST_MAX_CONCURRENCY: "4"
+    volumes:
+      - objects:/app/objects
+    depends_on:
+      postgres: { condition: service_healthy }
+      redis: { condition: service_healthy }
+    command: ["arq", "services.worker.WorkerSettings"]
 
 volumes:
   pgdata:
