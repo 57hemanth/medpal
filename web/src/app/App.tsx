@@ -20,7 +20,7 @@ import {
 } from 'react-router-dom';
 import { useAuth, useAuthState } from '../auth/AuthProvider';
 import { SignInPage } from '../features/auth/SignInPage';
-import { Badge, Brand } from '../components/ui';
+import { Brand } from '../components/ui';
 import { AppointmentsPage } from '../features/appointments/AppointmentsPage';
 import { AuditPage } from '../features/compliance/AuditPage';
 import { QualityPage } from '../features/compliance/QualityPage';
@@ -348,7 +348,6 @@ function Workspace() {
           </nav>
         </div>
         <div className="flex items-center gap-2">
-          <Badge tone="amber">Synthetic data</Badge>
           <a
             href="/docs"
             target="_blank"
