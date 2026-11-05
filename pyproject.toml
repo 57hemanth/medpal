@@ -78,7 +78,7 @@ root_packages = ["services"]
 [[tool.importlinter.contracts]]
 name = "Workflow modules are independent"
 type = "independence"
-modules = ["services.scheduling", "services.records", "services.scribe", "services.pharmacy"]
+modules = ["services.scheduling", "services.records", "services.scribe", "services.pharmacy", "services.notifications"]
 
 [[tool.importlinter.contracts]]
 name = "Platform does not depend on workflows or the agent"

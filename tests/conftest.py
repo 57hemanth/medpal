@@ -4,7 +4,12 @@ Every suite runs on built-in defaults plus what each test sets explicitly. Real-
 against the running app instead (see docs/implementation-status.md).
 """
 
+import os
+
 from services.platform.config import Settings, get_settings
+
+# The API's background email sender would race tests that inspect the outbox; tests dispatch explicitly.
+os.environ["MEDPAL_NOTIFY_DISPATCH"] = "off"
 
 Settings.model_config["env_file"] = None
 get_settings.cache_clear()

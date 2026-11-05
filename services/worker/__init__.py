@@ -1,4 +1,4 @@
-"""Background worker for records ingest (arq on Redis).
+"""Background worker: records ingest, pharmacy stock sync and appointment emails (arq on Redis).
 
     uv run arq services.worker.WorkerSettings
 
@@ -58,9 +58,29 @@ async def sync_pharmacy_stock(ctx: dict[str, Any]) -> dict[str, Any]:
     return {"updated": report.updated, "unknown": len(report.unknown)}
 
 
+async def send_due_emails(ctx: dict[str, Any]) -> dict[str, Any]:
+    """Appointment emails, when `MEDPAL_NOTIFY_DISPATCH=worker` (otherwise the API sends them)."""
+    from services.notifications.dispatch import dispatch_due
+    from services.notifications.email import build_email_sender
+
+    settings = get_settings()
+    if settings.notify_dispatch != "worker":
+        return {"skipped": "emails are sent by the API (notify_dispatch != worker)"}
+    report = await dispatch_due(ctx["pool"], build_email_sender(settings), settings)
+    return {
+        "sent": report.sent,
+        "skipped": report.skipped,
+        "retried": report.retried,
+        "failed": report.failed,
+    }
+
+
 class WorkerSettings:
     functions = [ingest_document]
-    cron_jobs = [cron(sync_pharmacy_stock, minute=set(range(0, 60, 15)), run_at_startup=True)]
+    cron_jobs = [
+        cron(sync_pharmacy_stock, minute=set(range(0, 60, 15)), run_at_startup=True),
+        cron(send_due_emails, second={0, 30}, unique=True),
+    ]
     on_startup = startup
     on_shutdown = shutdown
     redis_settings = RedisSettings.from_dsn(get_settings().redis_url)

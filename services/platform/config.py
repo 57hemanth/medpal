@@ -30,6 +30,21 @@ class Settings(BaseSettings):
     session_hours: int = 12
     # How one-time codes are delivered. "log" writes them to the server log (development only).
     sms_provider: Literal["log"] = "log"
+    # Appointment emails (services/notifications). "log" records the message in the server log only;
+    # "smtp" sends through any SMTP server (Mailpit in development: `make up`, inbox at :8025).
+    email_provider: Literal["log", "smtp"] = "log"
+    email_from: str = "MedPal <appointments@medpal.local>"
+    smtp_host: str = "localhost"
+    smtp_port: int = 1025
+    smtp_username: str | None = None
+    smtp_password: str | None = None
+    smtp_starttls: bool = False
+    # Who sends due messages: "inline" (a loop inside the API; one process or many, rows are claimed
+    # with SKIP LOCKED), "worker" (the arq worker's schedule) or "off".
+    notify_dispatch: Literal["inline", "worker", "off"] = "inline"
+    notify_poll_seconds: float = 15.0
+    # Links in emails (confirm address, manage appointments) point here.
+    public_base_url: str = "http://localhost:8000"
     oidc_issuer: str | None = None
     oidc_audience: str | None = None
     oidc_jwks_url: str | None = None
@@ -110,6 +125,10 @@ class Settings(BaseSettings):
             raise ValueError("chat_provider=fake is not allowed when env=prod")
         if self.env == "prod" and self.object_store_backend != "s3":
             raise ValueError("production requires object_store_backend=s3")
+        if self.env == "prod" and self.notify_dispatch != "off" and self.email_provider == "log":
+            raise ValueError(
+                "production appointment emails need a real email provider (MEDPAL_EMAIL_PROVIDER=smtp)"
+            )
         return self
 
     @property

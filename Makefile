@@ -12,8 +12,8 @@ install:         ## install Python deps incl. dev + data groups (uv)
 web-install:     ## install React app dependencies
 	cd web && npm install
 
-up:              ## start Postgres + Redis
-	$(COMPOSE) up -d --wait postgres redis
+up:              ## start Postgres, Redis and Mailpit (development inbox at :8025)
+	$(COMPOSE) up -d --wait postgres redis mailpit
 
 up-all:          ## start the data services and the API container
 	$(COMPOSE) --profile app up -d --build --wait

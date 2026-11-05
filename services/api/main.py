@@ -1,5 +1,7 @@
 """FastAPI app factory. `uvicorn services.api.main:app` runs it against Postgres."""
 
+import asyncio
+import contextlib
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from pathlib import Path
@@ -17,8 +19,10 @@ from services.agent.scribe.tools import PgScribeTools
 from services.agent.triage.assessor import ModelAssessor
 from services.agent.triage.graph import build_triage_graph
 from services.agent.triage.tools import PgTriageTools
-from services.api.routers import assistant, auth, consent, ops, pharmacy, records, scribe, triage
+from services.api.routers import assistant, auth, consent, messages, ops, pharmacy, records, scribe, triage
 from services.mcp_server.server import build_mcp_server
+from services.notifications.dispatch import run_forever
+from services.notifications.email import build_email_sender
 from services.platform.config import get_settings
 from services.platform.db import app_pool, checkpoint_pool
 from services.platform.egress import EgressChatClient, build_model_routes
@@ -35,6 +39,7 @@ async def _postgres_lifespan(app: FastAPI) -> AsyncIterator[None]:
     pool, cp_pool = app_pool(settings), checkpoint_pool(settings)
     await pool.open()
     await cp_pool.open()
+    dispatcher: asyncio.Task[None] | None = None
     try:
         saver = AsyncPostgresSaver(cp_pool)  # type: ignore[arg-type]
         await saver.setup()  # idempotent; creates checkpoint tables in the langgraph schema
@@ -59,9 +64,16 @@ async def _postgres_lifespan(app: FastAPI) -> AsyncIterator[None]:
             checkpointer=saver
         )
         app.state.supervisor_graph = assistant.build_assistant(app)
+        app.state.email_sender = build_email_sender(settings)
+        if settings.notify_dispatch == "inline":
+            dispatcher = asyncio.create_task(run_forever(pool, app.state.email_sender, settings))
         async with app.state.mcp_server.session_manager.run():
             yield
     finally:
+        if dispatcher is not None:
+            dispatcher.cancel()
+            with contextlib.suppress(asyncio.CancelledError):
+                await dispatcher
         queue = getattr(app.state, "ingest_queue", None)
         if queue is not None:
             await queue.aclose()
@@ -93,6 +105,7 @@ def create_app(*, triage_graph: Any | None = None) -> FastAPI:
     app.include_router(ops.router)
     app.include_router(assistant.router)
     app.include_router(pharmacy.router)
+    app.include_router(messages.router)
 
     @app.get("/healthz", tags=["ops"])
     async def healthz() -> dict[str, str]:

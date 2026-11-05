@@ -27,6 +27,11 @@ services:
       interval: 3s
       retries: 20
 
+  # Development inbox: catches every email MedPal sends (nothing leaves the machine). UI at :8025.
+  mailpit:
+    image: axllent/mailpit:v1.27.0
+    ports: ["1025:1025", "8025:8025"]
+
   api:
     build:
       context: ..

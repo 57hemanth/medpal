@@ -71,6 +71,13 @@ def _identities(conn: psycopg.Connection) -> None:
             " VALUES (%s, %s, %s, %s, %s, %s)",
             (pid, name, dob, city, lang, clinic),
         )
+    # Appointment emails: Asha and Rohan have confirmed addresses (example.com is reserved and never
+    # delivered; in development Mailpit catches everything). Lata has none, so her messages are skipped.
+    for pid, email in ((ASHA_PATIENT, "asha.verma@example.com"), (ROHAN_PATIENT, "rohan.reddy@example.com")):
+        conn.execute("UPDATE patient SET email = %s WHERE patient_id = %s", (email, pid))
+        conn.execute("SELECT set_config('app.role', 'system', true)")  # only the system may confirm
+        conn.execute("UPDATE patient SET email_verified_at = now() WHERE patient_id = %s", (pid,))
+        conn.execute("SELECT set_config('app.role', '', true)")
     # Every demo account has a mobile number for sign-in (all in a reserved synthetic range).
     for uid, pid, phone in (
         (ASHA_USER, ASHA_PATIENT, "+919820000001"),
@@ -262,6 +269,11 @@ def main() -> None:
                 (class_for(name) or class_for(composition), name),
             )
         _identities(conn)
+        # Seeded bookings aren't new: no "appointment confirmed" emails for them. Reminders stay queued.
+        conn.execute(
+            "UPDATE notification_outbox SET status = 'skipped', detail = 'created by the demo seed'"
+            " WHERE kind = 'appointment_booked' AND status = 'queued'"
+        )
     # Sample reports go through the real upload path (validation, privacy scan, storage, indexing).
     reports = asyncio.run(
         load_sample_records(
@@ -279,6 +291,7 @@ def main() -> None:
     )
     print("the pharmacist works at the doctor's clinic; past prescriptions are reserved or dispensed there")
     print("sample reports: Asha's annual health check (3 pages), Lata's blood count and kidney function")
+    print("appointment emails: Asha and Rohan have confirmed addresses; see them at http://localhost:8025")
     print(
         "try: curl -s localhost:8000/triage -H 'content-type: application/json' "
         f"-H 'X-Dev-User-Id: {ASHA_USER}' -H 'X-Dev-Role: patient' -H 'X-Dev-Patient-Id: {ASHA_PATIENT}' "
