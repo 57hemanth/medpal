@@ -42,3 +42,28 @@ async def test_api_runs_are_traced_and_metrics_are_compliance_only(world, admin_
         )
     assert {RUN_SPAN, "intake", "red_flag_rules", "emergency_handoff"} <= names
     assert "chest" not in stored  # metadata only: the patient's words never reach the trace store
+
+
+async def test_quick_scribe_drafts_are_traced(world, admin_url):
+    doctor_user = str(uuid.uuid4())
+    with psycopg.connect(admin_url) as conn, conn.transaction():
+        conn.execute(
+            "INSERT INTO app_user (user_id, role, doctor_id) VALUES (%s, 'doctor', %s)",
+            (doctor_user, world["doctor"]),
+        )
+        before = conn.execute("SELECT count(*) FROM trace_span WHERE workflow = 'scribe'").fetchone()[0]
+    app = create_app()
+    transport = httpx.ASGITransport(app=app)
+    async with (
+        app.router.lifespan_context(app),
+        httpx.AsyncClient(transport=transport, base_url="http://t") as client,
+    ):
+        r = await client.post(
+            "/api/scribe/draft",
+            json={"transcript": "Doctor: fever for two days. Take paracetamol 500 mg."},
+            headers={"X-Dev-User-Id": doctor_user, "X-Dev-Role": "doctor"},
+        )
+    assert r.status_code == 200, r.text
+    with psycopg.connect(admin_url) as conn:
+        after = conn.execute("SELECT count(*) FROM trace_span WHERE workflow = 'scribe'").fetchone()[0]
+    assert after > before  # the run and its model call are metered

@@ -47,7 +47,8 @@ async def draft(body: DraftIn, request: Request, auth: Auth) -> QuickDraftOut:
     if auth["role"] != "doctor":
         raise HTTPException(status.HTTP_403_FORBIDDEN, "only doctors can draft notes")
     try:
-        soap, rejected = await draft_note(request.app.state.chat_client, transcript=body.transcript)
+        async with traced(request, "scribe", str(uuid.uuid4())):  # metered like every other run
+            soap, rejected = await draft_note(request.app.state.chat_client, transcript=body.transcript)
         return QuickDraftOut(**soap.model_dump(), rejected_medicines=rejected)
     except (EgressBlocked, BlockedIdentifier) as exc:
         raise HTTPException(
