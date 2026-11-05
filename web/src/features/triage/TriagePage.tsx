@@ -46,12 +46,30 @@ interface TriageOut {
   booking_id?: string;
   specialty?: string;
 }
+interface Citation {
+  page: number;
+  text: string;
+}
+/** One specialist's part of an assistant reply, in the shape of that specialist's own endpoint. */
+type SpecialistResult = {
+  specialist: 'triage' | 'records' | 'scribe';
+  status: string;
+  reply?: string;
+  citations?: Citation[];
+} & Partial<TriageOut>;
+interface AssistantOut {
+  trace_id: string;
+  outcome: 'delegated' | 'emergency' | 'front_desk';
+  reply: string;
+  results: SpecialistResult[];
+}
 interface Message {
   id: string;
   role: 'user' | 'assistant';
   text: string;
   result?: TriageOut;
   chosen?: Candidate;
+  citations?: Citation[];
 }
 interface Appointment {
   appt_id: string;
@@ -206,21 +224,39 @@ export function TriagePage() {
       { id: crypto.randomUUID(), role: 'user', text: value.trim() },
     ]);
     try {
-      const result = await api<TriageOut>(
-        '/triage',
-        { method: 'POST', body: JSON.stringify({ text: value.trim() }) },
+      // One message can hold several needs ("knee pain… also, what was my LDL?"): the assistant
+      // runs triage and records in parallel. A triage result continues here on its own thread.
+      const response = await api<AssistantOut>(
+        '/api/assistant',
+        { method: 'POST', body: JSON.stringify({ message: value.trim() }) },
         auth,
       );
-      setActive(result);
-      setMessages((previous) => [
-        ...previous,
-        {
+      const triage = response.results.find(
+        (part) => part.specialist === 'triage',
+      ) as TriageOut | undefined;
+      setActive(triage ?? null);
+      const replies: Message[] = response.results.map((part) =>
+        part.specialist === 'triage'
+          ? {
+              id: crypto.randomUUID(),
+              role: 'assistant',
+              text: describe(part as TriageOut),
+              result: part as TriageOut,
+            }
+          : {
+              id: crypto.randomUUID(),
+              role: 'assistant',
+              text: part.reply ?? '',
+              citations: part.citations,
+            },
+      );
+      if (!replies.length)
+        replies.push({
           id: crypto.randomUUID(),
           role: 'assistant',
-          text: describe(result),
-          result,
-        },
-      ]);
+          text: response.reply,
+        });
+      setMessages((previous) => [...previous, ...replies]);
     } catch (cause) {
       setError(humanError(cause));
       setText(value);
@@ -458,6 +494,21 @@ export function TriagePage() {
                     >
                       {message.text}
                     </div>
+                    {message.citations && message.citations.length > 0 && (
+                      <ul className="mt-3 space-y-2" aria-label="Sources">
+                        {message.citations.map((source, position) => (
+                          <li
+                            key={`${source.page}-${position}`}
+                            className="rounded-xl border border-line bg-canvas px-3 py-2 text-xs leading-relaxed text-muted"
+                          >
+                            <span className="font-semibold text-ink">
+                              Page {source.page}
+                            </span>{' '}
+                            · {source.text}
+                          </li>
+                        ))}
+                      </ul>
+                    )}
                     {message.result?.status === 'awaiting_safety_check' &&
                       message.result.safety_questions && (
                         <SafetyCheck

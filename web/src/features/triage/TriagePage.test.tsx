@@ -1,12 +1,19 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { render, screen, waitFor, within } from '@testing-library/react';
+import {
+  cleanup,
+  render,
+  screen,
+  waitFor,
+  within,
+} from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { MemoryRouter } from 'react-router-dom';
-import { expect, test, vi } from 'vitest';
+import { afterEach, expect, test, vi } from 'vitest';
 import { api } from '../../api/client';
 import { TriagePage } from './TriagePage';
 
 vi.mock('../../api/client', () => ({ api: vi.fn() }));
+afterEach(cleanup);
 vi.mock('../../auth/AuthProvider', () => ({
   useAuth: () => ({
     auth: {
@@ -17,12 +24,19 @@ vi.mock('../../auth/AuthProvider', () => ({
   }),
 }));
 
+const triageOnly = (triage: Record<string, unknown>) => ({
+  trace_id: 'trace',
+  outcome: 'delegated',
+  reply: '',
+  results: [{ specialist: 'triage', ...triage }],
+});
+
 test('keeps a booking retry idempotent and disables completed appointment choices', async () => {
   const requests: { idempotency_key: string }[] = [];
   vi.mocked(api).mockImplementation(async (path, options) => {
     if (path === '/api/appointments') return [];
-    if (path === '/triage')
-      return {
+    if (path === '/api/assistant')
+      return triageOnly({
         thread_id: 'thread',
         status: 'awaiting_choice',
         specialty: 'Orthopaedics',
@@ -34,7 +48,7 @@ test('keeps a booking retry idempotent and disables completed appointment choice
             display_time: 'Mon 9 Nov, 09:00',
           },
         ],
-      };
+      });
     if (path.endsWith('/resume')) {
       requests.push(JSON.parse(String(options?.body)));
       if (requests.length === 1)
@@ -79,8 +93,8 @@ test('safety screen requires every answer and a yes leads to the emergency path'
   const resumed: { safety_answers?: Record<string, boolean> }[] = [];
   vi.mocked(api).mockImplementation(async (path, options) => {
     if (path === '/api/appointments') return [];
-    if (path === '/triage')
-      return {
+    if (path === '/api/assistant')
+      return triageOnly({
         thread_id: 'safety-thread',
         status: 'awaiting_safety_check',
         reply: 'Before we book, please answer a few quick safety questions.',
@@ -88,7 +102,7 @@ test('safety screen requires every answer and a yes leads to the emergency path'
           { key: 'chest_pain', question: 'Chest pain right now?' },
           { key: 'breathing', question: 'Trouble breathing?' },
         ],
-      };
+      });
     if (path.endsWith('/resume')) {
       resumed.push(JSON.parse(String(options?.body)));
       return {
@@ -129,4 +143,58 @@ test('safety screen requires every answer and a yes leads to the emergency path'
   expect(resumed).toEqual([
     { safety_answers: { breathing: true, chest_pain: false } },
   ]);
+});
+
+test('one message can book care and answer from records, with sources', async () => {
+  vi.mocked(api).mockImplementation(async (path) => {
+    if (path === '/api/appointments') return [];
+    if (path === '/api/assistant')
+      return {
+        trace_id: 'trace',
+        outcome: 'delegated',
+        reply: '',
+        results: [
+          {
+            specialist: 'triage',
+            thread_id: 'knee-thread',
+            status: 'awaiting_safety_check',
+            safety_questions: [
+              { key: 'chest_pain', question: 'Chest pain right now?' },
+            ],
+          },
+          {
+            specialist: 'records',
+            status: 'answered',
+            reply: 'Your LDL was 162 mg/dL.',
+            citations: [{ page: 2, text: 'LDL 162 mg/dL' }],
+          },
+        ],
+      };
+    throw new Error(`Unexpected endpoint ${path}`);
+  });
+  render(
+    <QueryClientProvider
+      client={
+        new QueryClient({ defaultOptions: { queries: { retry: false } } })
+      }
+    >
+      <MemoryRouter>
+        <TriagePage />
+      </MemoryRouter>
+    </QueryClientProvider>,
+  );
+  const user = userEvent.setup();
+  await user.type(
+    screen.getByPlaceholderText('Tell me how you’re feeling…'),
+    'Knee pain for a week. Also, what was my LDL?',
+  );
+  await user.keyboard('{Enter}');
+  expect(
+    await screen.findByText('Your LDL was 162 mg/dL.'),
+  ).toBeInTheDocument();
+  const sources = screen.getByRole('list', { name: 'Sources' });
+  expect(within(sources).getByText('Page 2')).toBeInTheDocument();
+  expect(
+    screen.getByRole('group', { name: 'Chest pain right now?' }),
+  ).toBeInTheDocument();
 });
