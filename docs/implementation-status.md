@@ -10,7 +10,7 @@ Reviewed against the code on 3 November 2026. **Verified** means a test in this 
 | Records | Upload with pre-storage privacy scan; doctor-review gate (rules + model `needs_doctor` flag) for advice questions; lay and Hinglish terms expanded to report terms in retrieval; **queued ingest** (arq on Redis, id only) with **parallel page processing** (LangGraph `Send`, bounded concurrency; [ADR-0009](adr/0009-async-ingest-parallel-pages.md)); RLS-scoped retrieval; explicit patient choice for caregivers; citation verification; safe degradation when the model is unavailable | Semantic embedding model; representative scan-quality evaluation |
 | Scribe | Encounter creation for the doctor's own appointment; **review graph with doctor interrupt** (sign / edit / reject → redraft, max 2); every edit kept as a draft version; medicines grounded in the transcript; **pharmacy stock check** with staleness; signing writes the note and prescriptions in one transaction | Clinical evaluation of drafts |
 | Pharmacy stock | One feed interface with CSV and real-time API adapters sharing contract tests; update-only sync where older readings never overwrite newer ones; 15-minute cron in the worker | A real pharmacy endpoint |
-| Supervisor | `POST /api/assistant`: safety screen first; model labels clauses only (rules fallback); role-limited `Send` fan-out to triage, records and scribe as their own threads; audited delegations; one trace ([ADR-0012](adr/0012-supervisor-with-specialist-graphs.md)) | — (the patient chat sends every new message through the assistant) |
+| Supervisor | `POST /api/assistant`: safety screen first; model labels clauses only (rules fallback); role-limited `Send` fan-out to triage, records and scribe as their own threads; follow-ups about this chat's appointment answered from the triage run's saved state; audited delegations; one trace ([ADR-0012](adr/0012-supervisor-with-specialist-graphs.md)) | — (the patient chat sends every new message through the assistant) |
 | MCP tool server | `/mcp` (streamable HTTP) and stdio: `find_appointment_slots`, `book_appointment` (patient only, idempotent), `check_medicine_stock`; same identity resolver as the API | — |
 | Models | Gemini verified live. Routing by tier (small/large, per-tier thinking level) with **fallback chains**; hard deadline per provider attempt; real token usage metered, thinking included; `ModelUnavailable` degrades to a human path | Production provider contracts |
 | Deployment | **Hybrid boundary** ([ADR-0008](adr/0008-hybrid-deployment-egress-boundary.md)): internal network, nginx ingress, allowlisting CONNECT egress proxy, `make boundary-check` | Real cloud/on-premise target |
@@ -25,12 +25,12 @@ Run on 3 November 2026 against a live local stack, with Gemini: `gemini-4-argon`
 
 | Check | Result |
 |---|---|
-| Unit tests | 228 passed |
+| Unit tests | 231 passed |
 | Data tests | 64 passed |
-| Web tests and production build | 8 passed; build clean |
+| Web tests and production build | 9 passed; build clean |
 | Lint, format, mypy, module-boundary contracts | clean |
 | Evaluation gates (`make eval`) | red-flag recall 100%, over-triage 2%, specialty 100%; records doctor-review recall 100%, over-refusal 0%. Held-out sets reported, never tuned: red-flag rules 20% (the safety questions cover the rest), doctor-review rules 30% |
-| Integration tests (real Postgres) | 60 passed |
+| Integration tests (real Postgres) | 61 passed |
 | Live API check (smoke) | 62/62 on Gemini |
 | Real-model check (`make live-check`) | 40/40: records values and cited pages (including Hinglish), refusals, held-out advice questions 10/10 with rules + model flag and 0/10 plain questions refused, routing 5/5 by the model, emergency never reaches the model, scribe drafts invent no medicines, broken primary falls through to the fallback, every call priced |
 | Provider failure in the wild | `gemini-4-argon` returned 504 during the run; the fallback answered and the patient saw no error |

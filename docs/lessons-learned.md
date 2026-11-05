@@ -157,6 +157,11 @@ Every suite above runs on a local fake model. These came from running the produc
 - *Fix:* the endpoint runs inside a trace like every other model call.
 - *Test:* `test_quick_scribe_drafts_are_traced`.
 
+**31. An assistant with no memory of its own conversation.**
+- *What happened:* right after booking, "what is the doctor specialization?" was sent to the records search, which said it couldn't find it. Each message reached the supervisor alone, and "what is the…" looks like a report question.
+- *Fix:* the chat sends its triage thread id with each message, and a `visit` specialist answers follow-ups from that run's saved state: no model and no search, only the caller's own thread. A follow-up that also describes a new symptom still starts a triage.
+- *Test:* `test_a_follow_up_about_this_chats_booking_is_answered_from_it_not_from_records`, `test_follow_up_questions_are_answered_from_this_chats_booking_and_only_for_its_owner`, and the web test with the same conversation. Found by a person using the app, not by any suite.
+
 ## Design choices worth copying
 
 - **Domain names in code** (`triage`, `records`, `scribe`), not internal codes: opaque names make every new reader look something up.

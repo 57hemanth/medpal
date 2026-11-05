@@ -174,6 +174,8 @@ screen ──(patient emergency)────────────────
 - The model returns only clause numbers and labels. Specialists receive the person's own words.
 - Each specialist runs as its own durable thread. A paused triage or scribe run continues on its own
   endpoint (`/triage/{thread_id}/resume`, `/api/scribe/sessions/{thread_id}/resume`).
+- Follow-ups such as "which doctor?" go to a `visit` specialist that reads the chat's own triage run
+  (the client sends its thread id); it uses no model, and only the run's owner gets an answer.
 - Each delegation is audited with the specialist's thread id and the supervisor's trace id, and all
   nodes, supervisor and specialist, land in one trace.
 
