@@ -28,6 +28,7 @@ dependencies = [
     "uvicorn[standard]>=0.54.0",
     "boto3>=1.43.123",
     "pypdf>=6.21.4",
+    "mcp>=2.3.0",
 ]
 
 [project.optional-dependencies]
@@ -54,6 +55,7 @@ ignore = ["S101"]  # asserts are fine in tests
 "tests/**" = ["S"]
 "infra/migrations/**" = ["E501", "S608"]  # DDL built from module constants, not user input
 "data/synthetic/**" = ["S311"]  # seeded random for reproducible synthetic data, not cryptography
+"infra/scripts/load_test.py" = ["S311"]  # random traffic mix and arrival times, not security
 
 [tool.mypy]
 python_version = "3.12"

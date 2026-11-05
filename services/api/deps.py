@@ -1,31 +1,15 @@
 """Request dependencies: who is calling (AuthContext)."""
 
-from fastapi import Header, HTTPException, status
+from fastapi import HTTPException, Request, status
 
-from services.platform.auth import ROLES, AuthContext
+from services.platform.auth import AuthContext
 from services.platform.config import get_settings
-from services.platform.oidc import OidcError, verify_token
+from services.platform.identity import IdentityError, resolve_identity
 
 
-async def auth_ctx(
-    authorization: str | None = Header(default=None),
-    x_dev_user_id: str | None = Header(default=None),
-    x_dev_role: str | None = Header(default=None),
-    x_dev_patient_id: str | None = Header(default=None),
-) -> AuthContext:
-    """Dev mode trusts X-Dev-* headers so the stack runs before OIDC login (Keycloak) is added.
-    Settings refuse auth_mode=dev in prod, and OIDC mode fails closed until it is implemented."""
-    settings = get_settings()
-    if settings.auth_mode != "dev":
-        if not authorization or not authorization.startswith("Bearer "):
-            raise HTTPException(status.HTTP_401_UNAUTHORIZED, "missing bearer token")
-        try:
-            return verify_token(authorization.removeprefix("Bearer ").strip(), settings)
-        except OidcError as exc:
-            raise HTTPException(status.HTTP_401_UNAUTHORIZED, str(exc)) from exc
-    if not x_dev_user_id or x_dev_role not in ROLES:
-        raise HTTPException(status.HTTP_401_UNAUTHORIZED, "missing or invalid dev identity headers")
-    acting_for = x_dev_patient_id if x_dev_role == "patient" else None
-    if x_dev_role == "patient" and not acting_for:
-        raise HTTPException(status.HTTP_401_UNAUTHORIZED, "patient identity needs X-Dev-Patient-Id")
-    return AuthContext(user_id=x_dev_user_id, role=x_dev_role, acting_for_patient_id=acting_for)  # type: ignore[typeddict-item]
+async def auth_ctx(request: Request) -> AuthContext:
+    """OIDC bearer token in production; X-Dev-* headers in development only (refused in prod)."""
+    try:
+        return resolve_identity(request.headers, get_settings())
+    except IdentityError as exc:
+        raise HTTPException(status.HTTP_401_UNAUTHORIZED, str(exc)) from exc
