@@ -193,6 +193,7 @@ const STATUS: Record<
   sent: { label: 'Sent', tone: 'green' },
   sending: { label: 'Sending', tone: 'blue' },
   skipped: { label: 'Not sent', tone: 'neutral' },
+  on_hold: { label: 'On hold', tone: 'amber' },
 };
 
 /** One vocabulary for every status shown in the product. */

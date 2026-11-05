@@ -242,3 +242,30 @@ async def test_others_cannot_read_or_write_someone_elses_messages(pool, world, a
     desk = {"user_id": str(uuid.uuid4()), "role": "desk", "acting_for_patient_id": None}
     seen_by_desk = await service.list_messages(pool, desk, limit=500)  # type: ignore[arg-type]
     assert seen_by_desk and all(m["patient_name"] for m in seen_by_desk)
+
+
+async def test_confirmation_emails_are_capped_per_hour(pool, world):
+    sender, settings = Outbox(), get_settings()
+    await service.update_contact(
+        pool, _auth(world), sender, settings, email=_email(world), email_notifications=True
+    )
+    for _ in range(service.MAX_CONFIRMATIONS_PER_HOUR - 1):
+        await service.send_verification(pool, _auth(world), sender, settings)
+    with pytest.raises(service.ContactError, match="Too many"):
+        await service.send_verification(pool, _auth(world), sender, settings)
+    with pytest.raises(service.ContactError, match="Too many"):  # nor by switching to another address
+        await service.update_contact(
+            pool, _auth(world), sender, settings, email="x-" + _email(world), email_notifications=True
+        )
+    assert len(sender.sent) == service.MAX_CONFIRMATIONS_PER_HOUR
+    contact = await service.get_contact(pool, _auth(world))
+    assert contact["email"] == _email(world)  # the refused change was not saved
+
+
+async def test_queued_messages_that_cannot_be_sent_say_why(pool, world, admin_url):
+    _book(admin_url, world)  # no email on file
+    held = [m for m in await service.list_messages(pool, _auth(world)) if m["status"] == "queued"]
+    assert held and {m["on_hold"] for m in held} == {"no email address"}
+    _confirm(admin_url, world)
+    ready = [m for m in await service.list_messages(pool, _auth(world)) if m["status"] == "queued"]
+    assert {m["on_hold"] for m in ready} == {None}

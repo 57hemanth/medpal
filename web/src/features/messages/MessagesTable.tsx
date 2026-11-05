@@ -12,6 +12,7 @@ export const MESSAGE_KIND: Record<OutboxMessage['kind'], string> = {
 /** Why a message didn't go, in words a patient or front-desk member understands. */
 function explain(message: OutboxMessage) {
   if (message.status === 'sent') return message.recipient ?? '';
+  if (message.on_hold) return `Won't be sent: ${message.on_hold}`;
   if (message.status === 'queued' && message.attempts > 0)
     return `Retrying: ${message.detail ?? 'delivery failed'}`;
   if (message.status === 'queued' || message.status === 'sending')
@@ -62,6 +63,9 @@ export function MessagesTable({
                     ? `Sent ${formatDateTime(message.sent_at)}`
                     : 'Email'}
                 </span>
+                <span className="block text-[12px] text-muted lg:hidden">
+                  {explain(message)}
+                </span>
               </td>
               {showPatient && <td>{message.patient_name ?? '—'}</td>}
               <td className="hidden whitespace-nowrap text-muted md:table-cell">
@@ -73,7 +77,9 @@ export function MessagesTable({
                 )}
               </td>
               <td>
-                <StatusPill status={message.status} />
+                <StatusPill
+                  status={message.on_hold ? 'on_hold' : message.status}
+                />
               </td>
               <td className="hidden text-[12px] text-muted lg:table-cell">
                 {explain(message)}

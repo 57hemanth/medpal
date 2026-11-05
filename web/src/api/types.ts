@@ -233,4 +233,5 @@ export interface OutboxMessage {
   starts_at: string | null;
   patient_name: string | null;
   doctor_name: string | null;
+  on_hold: string | null;
 }

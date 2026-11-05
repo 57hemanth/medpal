@@ -15,10 +15,24 @@ from services.platform.db import scoped, scoped_system
 from services.platform.signin import SignInError, sign, unsign
 
 VERIFY_TTL_SECONDS = 24 * 3600
+# Confirmation emails go to an address nobody has proven yet: cap them so the button can't be used to
+# flood someone's inbox. Counted from the audit log, which records each send anyway.
+MAX_CONFIRMATIONS_PER_HOUR = 3
 
 
 class ContactError(ValueError):
     """Shown to the person as is."""
+
+
+async def _confirmation_limit_reached(conn: Any, patient_id: str) -> bool:
+    row = await (
+        await conn.execute(
+            "SELECT count(*) AS n FROM audit_event WHERE resource = 'email_confirmation'"
+            " AND patient_id = %s AND at > now() - interval '1 hour'",
+            (patient_id,),
+        )
+    ).fetchone()
+    return int(row["n"]) >= MAX_CONFIRMATIONS_PER_HOUR
 
 
 def _own_patient(auth: AuthContext) -> str:
@@ -64,6 +78,8 @@ async def update_contact(
         )
         if before is None:
             raise PermissionError("patient not visible")
+        if address and address != before["email"] and await _confirmation_limit_reached(conn, patient_id):
+            raise ContactError("Too many confirmation emails in the last hour. Please try again later.")
         await conn.execute(
             "UPDATE patient SET email = %s, email_notifications = %s WHERE patient_id = %s",
             (address, email_notifications, patient_id),
@@ -92,14 +108,26 @@ async def send_verification(
             dict[str, Any] | None,
             await (
                 await conn.execute(
-                    "SELECT name, email, email_verified_at FROM patient WHERE patient_id = %s", (patient_id,)
+                    "SELECT name, email, email_verified_at FROM patient WHERE patient_id = %s FOR UPDATE",
+                    (patient_id,),
                 )
             ).fetchone(),
         )
-    if row is None or not row["email"]:
-        raise ContactError("Add an email address first")
-    if row["email_verified_at"] is not None:
-        raise ContactError("This address is already confirmed")
+        if row is None or not row["email"]:
+            raise ContactError("Add an email address first")
+        if row["email_verified_at"] is not None:
+            raise ContactError("This address is already confirmed")
+        if await _confirmation_limit_reached(conn, patient_id):
+            raise ContactError("Too many confirmation emails in the last hour. Please try again later.")
+        await audit.write(
+            conn,
+            auth,
+            action="send",
+            resource="email_confirmation",
+            record_id=patient_id,
+            patient_id=patient_id,
+            purpose="confirm email address",
+        )
     token = sign(
         {
             "purpose": "verify_email",
@@ -145,7 +173,13 @@ async def list_messages(
             await conn.execute(
                 "SELECT o.notification_id::text, o.kind, o.channel, o.status, o.send_after, o.sent_at,"
                 " o.recipient, o.subject, o.detail, o.attempts, o.created_at, s.starts_at,"
-                " p.name AS patient_name, d.name AS doctor_name"
+                " p.name AS patient_name, d.name AS doctor_name,"
+                # A queued message that can't go as things stand, and why (same rules as the sender).
+                " CASE WHEN o.status NOT IN ('queued','sending') THEN NULL"
+                "      WHEN p.email IS NULL THEN 'no email address'"
+                "      WHEN p.email_verified_at IS NULL THEN 'email address not confirmed'"
+                "      WHEN NOT p.email_notifications THEN 'appointment emails turned off'"
+                " END AS on_hold"
                 " FROM notification_outbox o"
                 " LEFT JOIN patient p ON p.patient_id = o.patient_id"
                 " LEFT JOIN appointment a ON a.appt_id = o.appt_id"

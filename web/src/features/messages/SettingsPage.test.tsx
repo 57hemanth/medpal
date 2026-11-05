@@ -79,6 +79,7 @@ test('lists the emails sent, and explains the ones that were not', async () => {
         starts_at: '2026-11-09T09:45:00Z',
         patient_name: 'Asha Verma',
         doctor_name: 'Nikhil Patel',
+        on_hold: null,
       },
       {
         notification_id: '2',
@@ -95,6 +96,7 @@ test('lists the emails sent, and explains the ones that were not', async () => {
         starts_at: '2026-11-09T09:45:00Z',
         patient_name: 'Asha Verma',
         doctor_name: 'Nikhil Patel',
+        on_hold: null,
       },
     ];
   });
@@ -102,5 +104,7 @@ test('lists the emails sent, and explains the ones that were not', async () => {
   expect(await screen.findByText('Booking confirmation')).toBeInTheDocument();
   expect(screen.getByText('Confirmed')).toBeInTheDocument();
   expect(screen.getByText('Reminder, 1 day before')).toBeInTheDocument();
-  expect(screen.getByText('Appointment cancelled')).toBeInTheDocument();
+  expect(screen.getAllByText('Appointment cancelled').length).toBeGreaterThan(
+    0,
+  );
 });

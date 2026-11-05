@@ -18,9 +18,11 @@ type Filter = 'all' | 'scheduled' | 'sent' | 'problems';
 
 const matches: Record<Filter, (m: OutboxMessage) => boolean> = {
   all: () => true,
-  scheduled: (m) => m.status === 'queued' || m.status === 'sending',
+  scheduled: (m) =>
+    !m.on_hold && (m.status === 'queued' || m.status === 'sending'),
   sent: (m) => m.status === 'sent',
   problems: (m) =>
+    !!m.on_hold ||
     m.status === 'failed' ||
     m.status === 'skipped' ||
     (m.status === 'queued' && m.attempts > 0),
