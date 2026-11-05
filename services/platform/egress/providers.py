@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 from collections.abc import Mapping
 from typing import Any, TypeVar, cast
 
@@ -35,7 +36,43 @@ class FakeStructuredChatModel[Structured: BaseModel]:
 
     async def ainvoke(self, messages: list[dict[str, str]]) -> Structured:
         self._model.seen_messages.append(messages)
-        return self._schema.model_validate(self._model.structured)
+        data = self._model.structured or _local_default(self._schema, messages)
+        return self._schema.model_validate(data)
+
+
+LOCAL_PLACEHOLDER = "[local fake model: set MEDPAL_CHAT_PROVIDER for real output]"
+_FIRST_CHUNK = re.compile(r"\[C1\][^\n]*\n(?P<text>.*?)(?=\n\n\[C\d+\]|\Z)", re.DOTALL)
+
+
+def _local_default(schema: type[BaseModel], messages: list[dict[str, str]]) -> dict[str, Any]:
+    """Schema-valid output for local development without a hosted model.
+
+    Citation answers are extractive: they quote the top retrieved passage and cite it, so the records
+    flow works end to end and every word shown is from the patient's own record. Other schemas get
+    clearly labelled placeholders (empty lists, never invented content such as medicines).
+    """
+    fields = schema.model_fields
+    if "citation_ids" in fields and "answer" in fields:
+        prompt = messages[-1]["content"] if messages else ""
+        match = _FIRST_CHUNK.search(prompt)
+        if not match:
+            return {"answer": LOCAL_PLACEHOLDER, "citation_ids": []}
+        quoted = " ".join(match.group("text").split())[:300]
+        return {"answer": f"From your record: {quoted}", "citation_ids": ["C1"]}
+    data: dict[str, Any] = {}
+    for name, info in fields.items():
+        if not info.is_required():
+            continue
+        annotation = str(info.annotation)
+        if info.annotation is str:
+            data[name] = LOCAL_PLACEHOLDER
+        elif annotation.startswith("list"):
+            data[name] = []
+        elif info.annotation is bool:
+            data[name] = False
+        elif info.annotation in (int, float):
+            data[name] = 0
+    return data
 
 
 def _require_api_key(settings: Settings) -> str:

@@ -501,3 +501,29 @@ async def test_doctor_signs_note_atomically_with_audit(pool, records_world):
         ).fetchone()
     assert note["content_hash"] == signed.content_hash  # type: ignore[index]
     assert audit_row["n"] == 1  # type: ignore[index]
+
+
+async def test_records_qa_degrades_safely_when_the_model_fails(pool, records_world):
+    """A provider outage or malformed output must never surface as an error to the patient."""
+    w = records_world
+
+    class _Down(FakeChatModel):
+        def with_structured_output(self, schema):  # type: ignore[no-untyped-def]
+            raise ConnectionError("provider unreachable")
+
+    for model in (_Down(), FakeChatModel(structured={"unexpected": 1})):
+        answer = await answer_question(
+            pool, EgressChatClient(model), as_(w["ua"], "patient", w["pa"]), question="LDL"
+        )
+        assert answer.status == "unavailable"
+        assert answer.citations == []
+
+
+async def test_local_fake_model_answers_from_the_patients_own_record(pool, records_world):
+    w = records_world
+    answer = await answer_question(
+        pool, EgressChatClient(FakeChatModel()), as_(w["ua"], "patient", w["pa"]), question="LDL"
+    )
+    assert answer.status == "answered"
+    assert answer.answer.startswith("From your record:")
+    assert {c.patient_id for c in answer.citations} == {w["pa"]}

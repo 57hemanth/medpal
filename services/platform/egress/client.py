@@ -2,16 +2,31 @@
 
 from __future__ import annotations
 
+import logging
 from collections.abc import Mapping
 from dataclasses import dataclass, field
 from typing import Any, Protocol, TypeVar
 
-from pydantic import BaseModel
+from pydantic import BaseModel, ValidationError
 
 from services.platform.phi.scrubber import TokenMap, assert_clean, reidentify, tokenise
 
 Structured = TypeVar("Structured", bound=BaseModel)
 Structured_co = TypeVar("Structured_co", bound=BaseModel, covariant=True)
+
+log = logging.getLogger(__name__)
+
+
+class ModelUnavailable(RuntimeError):
+    """The model could not produce a usable answer: provider error, timeout, refusal or malformed output.
+
+    Callers must degrade to a safe, human path instead of failing the request. The reason is a code;
+    the provider's own message is never surfaced because it may echo prompt content.
+    """
+
+    def __init__(self, reason: str) -> None:
+        super().__init__(reason)
+        self.reason = reason
 
 
 class ChatModel(Protocol):
@@ -80,7 +95,11 @@ class EgressChatClient:
 
     async def ask(self, request: ModelRequest) -> ModelResponse:
         messages, token_map, entities = self._safe_messages(request)
-        raw = await self._model.ainvoke(messages)
+        try:
+            raw = await self._model.ainvoke(messages)
+        except Exception as exc:  # vendor SDKs raise many types; one boundary, one error for callers
+            log.warning("model call failed for %s: %s", request.purpose, type(exc).__name__)
+            raise ModelUnavailable("model_call_failed") from exc
         text = _content(raw)
         assert_clean(text, known_names=request.known_names)
         return ModelResponse(
@@ -91,6 +110,13 @@ class EgressChatClient:
 
     async def ask_structured(self, request: ModelRequest, schema: type[Structured]) -> Structured:
         messages, token_map, _entities = self._safe_messages(request)
-        raw = await self._model.with_structured_output(schema).ainvoke(messages)
-        data = raw.model_dump() if isinstance(raw, BaseModel) else dict(raw)
-        return schema.model_validate(_reidentify_value(data, token_map))
+        try:
+            raw = await self._model.with_structured_output(schema).ainvoke(messages)
+            data = raw.model_dump() if isinstance(raw, BaseModel) else dict(raw)
+            return schema.model_validate(_reidentify_value(data, token_map))
+        except ValidationError as exc:
+            log.warning("model returned invalid %s for %s", schema.__name__, request.purpose)
+            raise ModelUnavailable("model_output_invalid") from exc
+        except Exception as exc:  # vendor SDKs raise many types; one boundary, one error for callers
+            log.warning("model call failed for %s: %s", request.purpose, type(exc).__name__)
+            raise ModelUnavailable("model_call_failed") from exc

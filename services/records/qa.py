@@ -8,7 +8,8 @@ from pydantic import BaseModel, Field
 from services.platform import audit
 from services.platform.auth import AuthContext
 from services.platform.db import scoped
-from services.platform.egress.client import EgressChatClient, ModelRequest
+from services.platform.egress.client import EgressChatClient, ModelRequest, ModelUnavailable
+from services.platform.phi.scrubber import BlockedIdentifier, EgressBlocked
 
 from .retrieval import RetrievedChunk, retrieve
 
@@ -63,14 +64,22 @@ async def answer_question(
             status="insufficient_evidence", answer="I could not find this in your records.", citations=[]
         )
     by_citation_id = {f"C{index}": chunk for index, chunk in enumerate(chunks, start=1)}
-    model_answer = await chat.ask_structured(
-        ModelRequest(
-            system="You answer patient record questions with verified citations. Never diagnose.",
-            user=_prompt(question, chunks),
-            purpose="records qa",
-        ),
-        CitationAnswer,
-    )
+    try:
+        model_answer = await chat.ask_structured(
+            ModelRequest(
+                system="You answer patient record questions with verified citations. Never diagnose.",
+                user=_prompt(question, chunks),
+                purpose="records qa",
+            ),
+            CitationAnswer,
+        )
+    except (ModelUnavailable, EgressBlocked, BlockedIdentifier):
+        # Never a 500 for the patient: the model is down, refused, or the privacy gate said no.
+        return RecordsAnswer(
+            status="unavailable",
+            answer="I can't answer that right now. Please try again later, or ask the records desk.",
+            citations=[],
+        )
     if not model_answer.citation_ids or not set(model_answer.citation_ids) <= set(by_citation_id):
         return RecordsAnswer(
             status="insufficient_evidence",

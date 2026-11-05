@@ -2,8 +2,8 @@ import pytest
 from pydantic import BaseModel
 
 from services.platform.config import Settings
-from services.platform.egress.client import EgressChatClient, ModelRequest
-from services.platform.egress.providers import FakeChatModel, build_chat_model
+from services.platform.egress.client import EgressChatClient, ModelRequest, ModelUnavailable
+from services.platform.egress.providers import LOCAL_PLACEHOLDER, FakeChatModel, build_chat_model
 from services.platform.phi.recognizers import verhoeff_check_digit
 from services.platform.phi.scrubber import BlockedIdentifier, EgressBlocked
 
@@ -84,3 +84,56 @@ def test_real_provider_requires_api_key_when_built():
 
     with pytest.raises(ValueError, match="MEDPAL_CHAT_API_KEY"):
         build_chat_model(settings)
+
+
+# ---- degradation and the local fake model -----------------------------------------------------
+
+
+class _CitationAnswer(BaseModel):
+    answer: str
+    citation_ids: list[str] = []
+
+
+class _Soap(BaseModel):
+    subjective: str
+    plan: str
+    medicines: list[str] = []
+
+
+class _BrokenModel(FakeChatModel):
+    def with_structured_output(self, schema):  # type: ignore[no-untyped-def]
+        raise TimeoutError("provider timed out")
+
+
+async def test_invalid_structured_output_becomes_model_unavailable():
+    client = EgressChatClient(FakeChatModel(structured={"unexpected": 1}))
+    with pytest.raises(ModelUnavailable) as exc:
+        await client.ask_structured(ModelRequest(system="s", user="u", purpose="t"), _CitationAnswer)
+    assert exc.value.reason == "model_output_invalid"
+
+
+async def test_provider_errors_become_model_unavailable():
+    client = EgressChatClient(_BrokenModel())
+    with pytest.raises(ModelUnavailable) as exc:
+        await client.ask_structured(ModelRequest(system="s", user="u", purpose="t"), _CitationAnswer)
+    assert exc.value.reason == "model_call_failed"
+
+
+async def test_local_fake_quotes_and_cites_the_top_passage():
+    prompt = (
+        "Question: LDL?\n\nContext:\n[C1] document=x page=1\nLDL 162 mg/dL"
+        "\n\n[C2] document=y page=2\nHbA1c 6.8"
+    )
+    out = await EgressChatClient(FakeChatModel()).ask_structured(
+        ModelRequest(system="s", user=prompt, purpose="t"), _CitationAnswer
+    )
+    assert out.citation_ids == ["C1"]
+    assert out.answer == "From your record: LDL 162 mg/dL"
+
+
+async def test_local_fake_never_invents_content_for_other_schemas():
+    out = await EgressChatClient(FakeChatModel()).ask_structured(
+        ModelRequest(system="s", user="Doctor: start a statin.", purpose="t"), _Soap
+    )
+    assert out.subjective == LOCAL_PLACEHOLDER and out.plan == LOCAL_PLACEHOLDER
+    assert out.medicines == []

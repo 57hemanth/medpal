@@ -7,6 +7,8 @@ from pydantic import BaseModel, Field
 
 from services.api.deps import auth_ctx
 from services.platform.auth import AuthContext
+from services.platform.egress.client import ModelUnavailable
+from services.platform.phi.scrubber import BlockedIdentifier, EgressBlocked
 from services.scribe.service import ScribeReviewNeeded, SoapDraft, draft_note, sign_note
 from services.scribe.speech import MAX_AUDIO_BYTES, SpeechUnavailable
 
@@ -40,6 +42,14 @@ async def draft(body: DraftIn, request: Request, auth: Auth) -> SoapDraft:
         return await draft_note(request.app.state.chat_client, transcript=body.transcript)
     except ScribeReviewNeeded as exc:
         raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, str(exc)) from exc
+    except (EgressBlocked, BlockedIdentifier) as exc:
+        raise HTTPException(
+            status.HTTP_422_UNPROCESSABLE_ENTITY, "transcript_blocked_by_privacy_gate"
+        ) from exc
+    except ModelUnavailable as exc:
+        raise HTTPException(
+            status.HTTP_503_SERVICE_UNAVAILABLE, "drafting_unavailable: write the note manually"
+        ) from exc
 
 
 @router.post("/sign", response_model=SignedOut)
