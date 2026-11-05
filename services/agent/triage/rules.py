@@ -4,9 +4,10 @@ These rules are engineering defaults, not clinician-approved medical content.
 The version/status travel with graph state so clients can display that clearly.
 """
 
+import re
 from dataclasses import dataclass
 
-RULESET_VERSION = "triage-draft-2026-11-02"
+RULESET_VERSION = "triage-draft-2026-11-03"  # 11-03: conservative negation handling
 RULESET_STATUS = "draft"
 SPECIALTY_CONFIDENCE_THRESHOLD = 0.72
 
@@ -61,10 +62,62 @@ class SpecialtyMatch:
     needs_clarification: bool = False
 
 
+# Negation is deliberately conservative: a missed emergency costs far more than a false alarm.
+# A phrase is ignored only when an unambiguous negation sits directly before it, in the same clause
+# ("no chest pain", "not having chest pain", "denies chest pain"), or, for romanised Hindi, when the
+# phrase is immediately followed by "nahi hai" ("seene mein dard nahi hai"). Anything less certain fires.
+_NEGATION_CUES = frozenset(
+    {
+        "no",
+        "not",
+        "without",
+        "denies",
+        "deny",
+        "never",
+        "dont",
+        "don't",
+        "doesnt",
+        "doesn't",
+        "didnt",
+        "didn't",
+    }
+)
+_NEGATION_FILLERS = frozenset(
+    {"any", "have", "having", "had", "has", "feel", "feeling", "experiencing", "got"}
+)
+_CLAUSE_BREAK = re.compile(r"[,.;:!?]|\b(?:but|and|though|although|lekin|par|aur)\b")
+_WORD = re.compile(r"[a-z']+")
+_HINDI_NEGATED_AFTER = re.compile(r"^\s+(?:nahi|nahin|nhi)\s+(?:hai|he|h)\b")
+
+
+def _is_negated(lowered: str, start: int, end: int) -> bool:
+    clause = _CLAUSE_BREAK.split(lowered[:start])[-1]
+    words = _WORD.findall(clause)
+    while words and words[-1] in _NEGATION_FILLERS:
+        words.pop()
+    # A negated list: "without chest pain or breathlessness" negates both items.
+    if words and words[-1] == "or":
+        words = words[:-1][:-3] if len(words) > 4 else words[:1]
+        while words and words[-1] in _NEGATION_FILLERS:
+            words.pop()
+    if words and words[-1] in _NEGATION_CUES:
+        return True
+    return bool(_HINDI_NEGATED_AFTER.match(lowered[end:]))
+
+
+def _fires(lowered: str, phrase: str) -> bool:
+    """True if any occurrence of `phrase` is not clearly negated."""
+    return any(
+        not _is_negated(lowered, m.start(), m.end())
+        # Leading boundary only: "breathless" must still match "breathlessness".
+        for m in re.finditer(rf"(?<![a-z]){re.escape(phrase)}", lowered)
+    )
+
+
 def match_red_flags(text: str) -> list[str]:
     lowered = text.lower()
     return sorted(
-        rule.rule_id for rule in RED_FLAG_RULES if any(phrase in lowered for phrase in rule.phrases)
+        rule.rule_id for rule in RED_FLAG_RULES if any(_fires(lowered, phrase) for phrase in rule.phrases)
     )
 
 
