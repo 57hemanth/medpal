@@ -31,11 +31,18 @@ class FakeTriageTools:
         self.handoffs: list[dict] = []
         self.shortlist_calls = 0
         self.specialties: list[str] = []
+        self.windows: list[dict] = []
+        self.times: dict[str, list[CandidateView]] = {}
 
-    async def shortlist(self, auth, specialty, exclude_slot_ids):
+    async def shortlist(self, auth, specialty, exclude_slot_ids, **when):
         self.shortlist_calls += 1
         self.specialties.append(specialty)
+        self.windows.append(when)
         return [s for s in self.slots if s["slot_id"] not in exclude_slot_ids][:3]
+
+    async def doctor_times(self, auth, doctor_id, exclude_slot_ids, **when):
+        self.windows.append({"doctor_id": doctor_id, **when})
+        return [t for t in self.times.get(doctor_id, []) if t["slot_id"] not in exclude_slot_ids]
 
     async def reserve(self, auth, *, slot_id, patient_id, idempotency_key, thread_id):
         if idempotency_key in self.bookings:
@@ -239,3 +246,66 @@ async def test_empty_clarification_asks_again():
     await start(g, "I feel strange")
     out = await g.ainvoke(Command(resume={"answer": "   "}), cfg())
     assert interrupt_type(out) == "clarify"
+
+
+# ---- other times while choosing ----
+
+
+async def test_more_times_for_an_offered_doctor_replaces_the_options_and_books_from_them():
+    tools = FakeTriageTools([cand("s1", "d1"), cand("s2", "d2")])
+    tools.times["d2"] = [cand("t1", "d2"), cand("t2", "d2")]
+    graph = app(tools)
+    await start(graph, "Dull lower back pain for three weeks")
+
+    out = await graph.ainvoke(Command(resume={"more_times": {"doctor_id": "d2"}}), cfg())
+    [intr] = out["__interrupt__"]
+    assert intr.value["type"] == "pick_slot"
+    assert [c["slot_id"] for c in intr.value["candidates"]] == ["t1", "t2"]
+    assert intr.value["note"] == "Here are more times with Dr d2."
+
+    # The first list is no longer on offer; the new times are.
+    stale = await graph.ainvoke(Command(resume={"slot_id": "s1", "idempotency_key": "k1"}), cfg())
+    assert stale["__interrupt__"][0].value["type"] == "pick_slot" and tools.bookings == {}
+    done = await graph.ainvoke(Command(resume={"slot_id": "t2", "idempotency_key": "k2"}), cfg())
+    assert done["outcome"] == "booked" and tools.bookings == {"k2": "t2"}
+
+
+async def test_more_times_only_for_doctors_offered_in_this_run():
+    tools = FakeTriageTools([cand("s1", "d1")])
+    tools.times["d9"] = [cand("x1", "d9")]
+    graph = app(tools)
+    await start(graph, "Dull lower back pain for three weeks")
+
+    out = await graph.ainvoke(Command(resume={"more_times": {"doctor_id": "d9"}}), cfg())
+    assert [c["slot_id"] for c in out["__interrupt__"][0].value["candidates"]] == ["s1"]
+    assert not any(w.get("doctor_id") == "d9" for w in tools.windows)
+
+
+async def test_no_times_in_the_asked_window_falls_back_to_the_next_available_and_says_so():
+    tools = FakeTriageTools([cand("s1", "d1")])
+    graph = app(tools)
+    await start(graph, "Dull lower back pain for three weeks")
+
+    async def none_in_window(auth, doctor_id, exclude_slot_ids, **when):
+        return [] if when else [cand("n1", doctor_id)]
+
+    tools.doctor_times = none_in_window  # type: ignore[method-assign]
+    out = await graph.ainvoke(
+        Command(resume={"more_times": {"doctor_id": "d1", "day": "2026-11-10", "part_of_day": "evening"}}),
+        cfg(),
+    )
+    value = out["__interrupt__"][0].value
+    assert value["note"] == (
+        "Dr d1 has no free times on Tue 10 Nov in the evening. These are the next available."
+    )
+    assert [c["slot_id"] for c in value["candidates"]] == ["n1"]
+
+
+async def test_a_malformed_time_request_just_asks_again():
+    tools = FakeTriageTools([cand("s1", "d1")])
+    graph = app(tools)
+    await start(graph, "Dull lower back pain for three weeks")
+    for bad in ({"day": "not-a-date"}, {"part_of_day": "midnight"}, "tomorrow"):
+        out = await graph.ainvoke(Command(resume={"more_times": bad}), cfg())
+        assert [c["slot_id"] for c in out["__interrupt__"][0].value["candidates"]] == ["s1"]
+    assert tools.windows == [{}]  # only the first shortlist ran

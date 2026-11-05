@@ -16,8 +16,9 @@
                  ▼
           shortlist ─none─► front_desk_handoff ─► END
                                ▼
-                       present_options  (interrupt: patient picks a slot)
-                               ▼
+                       present_options  (interrupt: patient picks a slot, or asks for other times)
+                               │ ─other times─► find_times (a doctor's times, or a day / part of day)
+                               ▼                    └──► present_options
                              book ─full─► shortlist (re-offer, slot excluded; ≤3 times)
                                ▼ ok
                             notify ─► END
@@ -27,7 +28,8 @@ from its start on resume (verified against langgraph 1.2.19).
 """
 
 from collections.abc import Awaitable
-from typing import Protocol
+from datetime import date
+from typing import Any, Protocol
 
 from langchain_core.runnables import RunnableConfig
 from langgraph.graph import END, START, StateGraph
@@ -39,6 +41,7 @@ from .assessor import SPECIALTY_CONFIDENCE_MIN, TriageAssessor
 from .rules import RULESET_STATUS, RULESET_VERSION, SAFETY_SCREEN, match_red_flags, screen_red_flags
 from .rules import match_specialty as classify_specialty
 from .state import CandidateView, TriageState
+from .times import PART_HOURS, describe_when
 
 MAX_REOFFERS = 3
 MAX_CLARIFICATIONS = 1
@@ -61,8 +64,28 @@ class TriageTools(Protocol):
     """Tools the graph may use. Implemented over Postgres in tools.py; faked in unit tests."""
 
     def shortlist(
-        self, auth: AuthContext, specialty: str, exclude_slot_ids: list[str]
-    ) -> Awaitable[list[CandidateView]]: ...
+        self,
+        auth: AuthContext,
+        specialty: str,
+        exclude_slot_ids: list[str],
+        *,
+        day: date | None = None,
+        part_of_day: str | None = None,
+    ) -> Awaitable[list[CandidateView]]:
+        """Earliest free slot per doctor, optionally on `day` and/or in `part_of_day`."""
+        ...
+
+    def doctor_times(
+        self,
+        auth: AuthContext,
+        doctor_id: str,
+        exclude_slot_ids: list[str],
+        *,
+        day: date | None = None,
+        part_of_day: str | None = None,
+    ) -> Awaitable[list[CandidateView]]:
+        """A spread of one doctor's free slots, optionally on `day` and/or in `part_of_day`."""
+        ...
 
     def reserve(
         self, auth: AuthContext, *, slot_id: str, patient_id: str, idempotency_key: str, thread_id: str
@@ -71,6 +94,34 @@ class TriageTools(Protocol):
     def open_handoff(
         self, auth: AuthContext, *, kind: str, patient_id: str | None, reason: str, thread_id: str
     ) -> Awaitable[str]: ...
+
+
+def _time_request(value: Any, doctors: list[dict[str, str]]) -> dict[str, str | None] | None:
+    """Validate a "more times" request. Only doctors already offered; a real date; a known part of day."""
+    if not isinstance(value, dict):
+        return None
+    doctor_id = value.get("doctor_id")
+    if doctor_id is not None and doctor_id not in {d["doctor_id"] for d in doctors}:
+        return None
+    day = value.get("day")
+    try:
+        day = date.fromisoformat(day).isoformat() if day else None
+    except (TypeError, ValueError):
+        return None
+    part = value.get("part_of_day")
+    if part is not None and part not in PART_HOURS:
+        return None
+    return {"doctor_id": doctor_id, "day": day, "part_of_day": part}
+
+
+def _merge_doctors(known: list[dict[str, str]], candidates: list[CandidateView]) -> list[dict[str, str]]:
+    seen = {d["doctor_id"] for d in known}
+    out = list(known)
+    for c in candidates:
+        if c["doctor_id"] not in seen:
+            seen.add(c["doctor_id"])
+            out.append({"doctor_id": c["doctor_id"], "doctor_name": c["doctor_name"]})
+    return out
 
 
 def _thread_id(config: RunnableConfig) -> str:
@@ -174,18 +225,73 @@ def build_triage_graph(tools: TriageTools, assessor: TriageAssessor | None = Non
     async def shortlist(state: TriageState) -> TriageState:
         specialty = state.get("specialty") or "General Medicine"
         candidates = await tools.shortlist(state["auth"], specialty, state.get("excluded_slot_ids", []))
-        return {"candidates": candidates, "chosen_slot_id": None}
+        return {
+            "candidates": candidates,
+            "chosen_slot_id": None,
+            "doctors_offered": _merge_doctors(state.get("doctors_offered", []), candidates),
+            "options_note": None,
+        }
 
     async def present_options(state: TriageState) -> TriageState:
         # Pure: this node re-runs on resume, so no side effects here.
-        choice = interrupt({"type": "pick_slot", "candidates": state["candidates"]})
+        choice = interrupt(
+            {"type": "pick_slot", "candidates": state["candidates"], "note": state.get("options_note")}
+        )
+        if isinstance(choice, dict) and "more_times" in choice:
+            request = _time_request(choice["more_times"], state.get("doctors_offered", []))
+            return {"time_request": request, "chosen_slot_id": None, "idempotency_key": None}
         offered = {c["slot_id"] for c in state["candidates"]}
         slot_id = choice.get("slot_id") if isinstance(choice, dict) else None
         key = choice.get("idempotency_key") if isinstance(choice, dict) else None
         if slot_id not in offered or not key:
             # A slot we didn't offer (or no idempotency key) is not a valid choice: ask again.
-            return {"chosen_slot_id": None, "idempotency_key": None}
-        return {"chosen_slot_id": slot_id, "idempotency_key": key}
+            return {"chosen_slot_id": None, "idempotency_key": None, "time_request": None}
+        return {"chosen_slot_id": slot_id, "idempotency_key": key, "time_request": None}
+
+    async def find_times(state: TriageState) -> TriageState:
+        """Other times: one doctor's spread of times, or every doctor's earliest on a day / part of day.
+        Read-only, and every sentence here is fixed wording around facts from the calendar."""
+        request = state.get("time_request") or {}
+        auth, excluded = state["auth"], state.get("excluded_slot_ids", [])
+        specialty = state.get("specialty") or "General Medicine"
+        day_text = request.get("day")
+        day = date.fromisoformat(day_text) if day_text else None
+        part = request.get("part_of_day")
+        when = describe_when(day, part)
+        doctor = next(
+            (d for d in state.get("doctors_offered", []) if d["doctor_id"] == request.get("doctor_id")), None
+        )
+        if doctor:
+            name = doctor["doctor_name"]
+            found = await tools.doctor_times(auth, doctor["doctor_id"], excluded, day=day, part_of_day=part)
+            note = f"Here are more times with {name}" + (f" {when}." if when else ".")
+            if not found and when:
+                found = await tools.doctor_times(auth, doctor["doctor_id"], excluded)
+                note = f"{name} has no free times {when}. These are the next available."
+            if not found:
+                return {
+                    "time_request": None,
+                    "options_note": f"{name} has no other free times in the next two weeks. "
+                    "Please choose another doctor or time.",
+                }
+        else:
+            found = await tools.shortlist(auth, specialty, excluded, day=day, part_of_day=part)
+            note = (
+                f"These doctors have free times {when}."
+                if when
+                else "Here are the doctors available soonest."
+            )
+            if not found and when:
+                found = await tools.shortlist(auth, specialty, excluded)
+                note = f"No {specialty} doctor has a free time {when}. These are the soonest available."
+            if not found:
+                return {"time_request": None, "options_note": f"No {specialty} doctor has a free time soon."}
+        return {
+            "candidates": found,
+            "doctors_offered": _merge_doctors(state.get("doctors_offered", []), found),
+            "time_request": None,
+            "options_note": note,
+        }
 
     async def book(state: TriageState, config: RunnableConfig) -> TriageState:
         auth = state["auth"]
@@ -257,7 +363,9 @@ def build_triage_graph(tools: TriageTools, assessor: TriageAssessor | None = Non
         return "present_options" if state["candidates"] else "front_desk_handoff"
 
     def after_choice(state: TriageState) -> str:
-        return "book" if state.get("chosen_slot_id") else "present_options"
+        if state.get("chosen_slot_id"):
+            return "book"
+        return "find_times" if state.get("time_request") else "present_options"
 
     def after_book(state: TriageState) -> str:
         if state.get("booking_id"):
@@ -274,6 +382,7 @@ def build_triage_graph(tools: TriageTools, assessor: TriageAssessor | None = Non
     g.add_node("ask_clarifying", ask_clarifying)
     g.add_node("shortlist", shortlist)
     g.add_node("present_options", present_options)
+    g.add_node("find_times", find_times)
     g.add_node("book", book)
     g.add_node("notify", notify)
     g.add_node("front_desk_handoff", front_desk_handoff)
@@ -292,7 +401,8 @@ def build_triage_graph(tools: TriageTools, assessor: TriageAssessor | None = Non
     )
     g.add_conditional_edges("ask_clarifying", after_clarify, ["red_flag_rules", "ask_clarifying"])
     g.add_conditional_edges("shortlist", after_shortlist, ["present_options", "front_desk_handoff"])
-    g.add_conditional_edges("present_options", after_choice, ["book", "present_options"])
+    g.add_conditional_edges("present_options", after_choice, ["book", "find_times", "present_options"])
+    g.add_edge("find_times", "present_options")
     g.add_conditional_edges("book", after_book, ["notify", "shortlist", "front_desk_handoff"])
     for terminal in ("notify", "emergency_handoff", "front_desk_handoff"):
         g.add_edge(terminal, END)

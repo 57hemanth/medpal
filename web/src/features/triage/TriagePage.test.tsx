@@ -271,3 +271,79 @@ test('a follow-up after booking is answered from this chat, not the records', as
   expect(sent[0].conversation_thread_id).toBeNull();
   expect(sent[1].conversation_thread_id).toBe('knee-thread');
 });
+
+test('more times for one doctor shows their times by day; the earlier list can no longer be booked', async () => {
+  const resumed: Record<string, unknown>[] = [];
+  const slot = (id: string, doctor: string, time: string) => ({
+    slot_id: id,
+    doctor_id: doctor,
+    doctor_name: doctor === 'd1' ? 'Chetan Ranade' : 'Seema Srivastava',
+    clinic_name: 'Aundh Clinic',
+    display_time: time,
+  });
+  vi.mocked(api).mockImplementation(async (path, options) => {
+    if (path === '/api/appointments') return [];
+    if (path === '/api/assistant')
+      return triageOnly({
+        thread_id: 'thread',
+        status: 'awaiting_choice',
+        specialty: 'Orthopaedics',
+        candidates: [
+          slot('a', 'd1', 'Mon 9 Nov, 09:00'),
+          slot('b', 'd2', 'Mon 9 Nov, 09:00'),
+        ],
+      });
+    if (path.endsWith('/resume')) {
+      const body = JSON.parse(String(options?.body));
+      resumed.push(body);
+      if (body.more_times)
+        return {
+          thread_id: 'thread',
+          status: 'awaiting_choice',
+          specialty: 'Orthopaedics',
+          note: 'Here are more times with Chetan Ranade.',
+          candidates: [
+            slot('t1', 'd1', 'Mon 9 Nov, 09:00'),
+            slot('t2', 'd1', 'Mon 9 Nov, 09:30'),
+            slot('t3', 'd1', 'Tue 10 Nov, 09:00'),
+          ],
+        };
+      return { thread_id: 'thread', status: 'booked', booking_id: 'ref' };
+    }
+    throw new Error('Unexpected endpoint');
+  });
+  render(
+    <QueryClientProvider
+      client={
+        new QueryClient({ defaultOptions: { queries: { retry: false } } })
+      }
+    >
+      <MemoryRouter>
+        <TriagePage />
+      </MemoryRouter>
+    </QueryClientProvider>,
+  );
+  const user = userEvent.setup();
+  await user.click(
+    screen.getByRole('button', { name: 'I’ve had knee pain for a week' }),
+  );
+  const [chetanMore] = await screen.findAllByRole('button', {
+    name: 'More times',
+  });
+  await user.click(chetanMore);
+  expect(
+    await screen.findByText('Here are more times with Chetan Ranade.'),
+  ).toBeInTheDocument();
+  expect(resumed[0]).toEqual({ more_times: { doctor_id: 'd1' } });
+  expect(screen.getByText('Tue 10 Nov')).toBeInTheDocument();
+  // The first list is replaced: its buttons are disabled.
+  for (const button of screen.getAllByRole('button', { name: 'Choose time' }))
+    expect(button).toBeDisabled();
+  await user.click(
+    screen.getByRole('button', {
+      name: 'Book Chetan Ranade, Mon 9 Nov, 09:30 IST',
+    }),
+  );
+  expect(await screen.findByText('Appointment confirmed')).toBeInTheDocument();
+  expect(resumed[1]).toMatchObject({ slot_id: 't2' });
+});

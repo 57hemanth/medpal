@@ -29,6 +29,7 @@ import {
 
 interface Candidate {
   slot_id: string;
+  doctor_id: string;
   doctor_name: string;
   clinic_name: string;
   display_time: string;
@@ -42,6 +43,7 @@ interface TriageOut {
   status: string;
   reply?: string;
   candidates?: Candidate[];
+  note?: string | null;
   safety_questions?: SafetyQuestion[];
   booking_id?: string;
   specialty?: string;
@@ -53,7 +55,7 @@ interface Citation {
 }
 /** One specialist's part of an assistant reply, in the shape of that specialist's own endpoint. */
 type SpecialistResult = {
-  specialist: 'triage' | 'records' | 'scribe';
+  specialist: 'triage' | 'records' | 'scribe' | 'visit';
   status: string;
   reply?: string;
   citations?: Citation[];
@@ -86,6 +88,7 @@ const prompts = [
 ];
 
 function describe(result: TriageOut): string {
+  if (result.status === 'awaiting_choice' && result.note) return result.note;
   if (result.status === 'awaiting_choice')
     return (
       `I found ${result.candidates?.length ?? 0} available options${result.specialty ? ` in ${result.specialty.toLowerCase()}` : ''}. Choose the appointment that works best for you.` +
@@ -172,6 +175,149 @@ export function SafetyCheck({
   );
 }
 
+function initials(name: string) {
+  return name
+    .split(' ')
+    .map((part) => part[0])
+    .slice(0, 2)
+    .join('');
+}
+
+/** Options grouped by doctor and clinic; a doctor with several times shows them by day. */
+export function OptionCards({
+  result,
+  live,
+  busy,
+  onBook,
+  onMoreTimes,
+}: {
+  result: TriageOut;
+  live: boolean;
+  busy: boolean;
+  onBook: (candidate: Candidate) => void;
+  onMoreTimes: (doctor: Candidate | null) => void;
+}) {
+  const groups: Candidate[][] = [];
+  for (const candidate of result.candidates ?? []) {
+    const group = groups.find(
+      (items) =>
+        items[0].doctor_id === candidate.doctor_id &&
+        items[0].clinic_name === candidate.clinic_name,
+    );
+    if (group) group.push(candidate);
+    else groups.push([candidate]);
+  }
+  const oneDoctor =
+    new Set((result.candidates ?? []).map((c) => c.doctor_id)).size === 1;
+  return (
+    <div className="mt-4 space-y-2.5">
+      {groups.map((slots) => {
+        const doctor = slots[0];
+        const days: [string, Candidate[]][] = [];
+        for (const slot of slots) {
+          const day = slot.display_time.split(', ')[0];
+          const entry = days.find(([label]) => label === day);
+          if (entry) entry[1].push(slot);
+          else days.push([day, [slot]]);
+        }
+        return (
+          <article
+            key={`${doctor.doctor_id}-${doctor.clinic_name}`}
+            className="rounded-xl border border-line p-4"
+          >
+            <div className="flex items-start gap-3">
+              <span className="flex size-10 shrink-0 items-center justify-center rounded-full bg-[#f1eee7] text-xs font-semibold text-[#6d6048]">
+                {initials(doctor.doctor_name)}
+              </span>
+              <div className="min-w-0">
+                <h3 className="text-sm font-semibold">{doctor.doctor_name}</h3>
+                <p className="mt-1 text-xs text-muted">
+                  {result.specialty ?? 'Clinic appointment'}
+                </p>
+              </div>
+            </div>
+            <p className="mt-3 flex items-center gap-2 text-xs text-muted">
+              <MapPin size={13} />
+              {doctor.clinic_name}
+            </p>
+            {slots.length === 1 ? (
+              <div className="mt-3 flex flex-wrap items-center justify-between gap-2 border-t border-line pt-3">
+                <span className="flex items-center gap-2 text-xs font-medium">
+                  <CalendarDays size={14} className="text-brand-600" />
+                  {doctor.display_time} IST
+                </span>
+                <span className="flex flex-wrap gap-2">
+                  <button
+                    type="button"
+                    className="btn btn-ghost px-2.5 text-xs"
+                    disabled={!live}
+                    onClick={() => onMoreTimes(doctor)}
+                  >
+                    <Clock3 size={13} />
+                    More times
+                  </button>
+                  <Button
+                    variant="secondary"
+                    className="px-3 text-xs"
+                    busy={busy}
+                    disabled={!live}
+                    onClick={() => onBook(doctor)}
+                  >
+                    Choose time
+                    <ArrowRight size={13} />
+                  </Button>
+                </span>
+              </div>
+            ) : (
+              <div className="mt-3 space-y-3 border-t border-line pt-3">
+                {days.map(([day, items]) => (
+                  <div key={day}>
+                    <p className="mb-1.5 flex items-center gap-2 text-xs font-medium">
+                      <CalendarDays size={14} className="text-brand-600" />
+                      {day}
+                    </p>
+                    <div className="flex flex-wrap gap-2">
+                      {items.map((slot) => {
+                        const time = slot.display_time.split(', ')[1];
+                        return (
+                          <button
+                            key={slot.slot_id}
+                            type="button"
+                            disabled={!live}
+                            aria-label={`Book ${slot.doctor_name}, ${slot.display_time} IST`}
+                            onClick={() => onBook(slot)}
+                            className="min-h-9 rounded-lg border border-line px-3 text-xs font-medium hover:border-brand-300 hover:bg-brand-50 disabled:opacity-50"
+                          >
+                            {time}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+                ))}
+                <p className="text-[11px] text-muted">
+                  Times are IST. Tap one to book it.
+                </p>
+              </div>
+            )}
+          </article>
+        );
+      })}
+      {oneDoctor && (
+        <button
+          type="button"
+          className="btn btn-ghost px-2.5 text-xs"
+          disabled={!live}
+          onClick={() => onMoreTimes(null)}
+        >
+          <Stethoscope size={13} />
+          Other doctors
+        </button>
+      )}
+    </div>
+  );
+}
+
 function AssistantAvatar() {
   return (
     <span className="mt-0.5 flex size-8 shrink-0 items-center justify-center rounded-xl bg-brand-700 text-white">
@@ -188,6 +334,7 @@ export function TriagePage() {
   const [messages, setMessages] = useState<Message[]>([]);
   const [active, setActive] = useState<TriageOut | null>(null);
   const [busy, setBusy] = useState(false);
+  const [waiting, setWaiting] = useState('Checking care options…');
   const [error, setError] = useState('');
   const logRef = useRef<HTMLDivElement>(null);
   const keys = useRef(new Map<string, string>());
@@ -226,6 +373,7 @@ export function TriagePage() {
     if (active?.status === 'awaiting_clarification')
       return clarify(active, value);
     setBusy(true);
+    setWaiting('Checking care options…');
     setError('');
     setText('');
     setActive(null);
@@ -247,9 +395,10 @@ export function TriagePage() {
         },
         auth,
       );
-      const triage = response.results.find(
-        (part) => part.specialist === 'triage',
-      ) as TriageOut | undefined;
+      // A booking step: a new triage, or other times in the booking already under way in this chat.
+      const isBooking = (part: SpecialistResult) =>
+        part.specialist === 'triage' || Boolean(part.candidates);
+      const triage = response.results.find(isBooking) as TriageOut | undefined;
       // Only a new triage result replaces the active one: a follow-up question must not disable the
       // slot choices or safety questions still waiting above.
       if (triage) {
@@ -257,7 +406,7 @@ export function TriagePage() {
         conversation.current = triage.thread_id;
       }
       const replies: Message[] = response.results.map((part) =>
-        part.specialist === 'triage'
+        isBooking(part)
           ? {
               id: crypto.randomUUID(),
               role: 'assistant',
@@ -289,6 +438,7 @@ export function TriagePage() {
   /** The assistant asked a clarifying question: the next message answers it, in the same run. */
   async function clarify(result: TriageOut, value: string) {
     setBusy(true);
+    setWaiting('Checking care options…');
     setError('');
     setText('');
     setMessages((previous) => [
@@ -330,6 +480,7 @@ export function TriagePage() {
     )
       return;
     setBusy(true);
+    setWaiting('Checking care options…');
     setError('');
     try {
       const response = await api<TriageOut>(
@@ -363,14 +514,11 @@ export function TriagePage() {
   }
 
   async function book(result: TriageOut, candidate: Candidate) {
-    if (
-      busy ||
-      active?.thread_id !== result.thread_id ||
-      active?.status !== 'awaiting_choice'
-    )
+    if (busy || active !== result || active.status !== 'awaiting_choice')
       return;
     setBusy(true);
     setError('');
+    setWaiting('Confirming your appointment…');
     const attempt = `${result.thread_id}:${candidate.slot_id}`;
     const key = keys.current.get(attempt) ?? crypto.randomUUID();
     keys.current.set(attempt, key);
@@ -410,6 +558,48 @@ export function TriagePage() {
         await client.invalidateQueries({
           queryKey: ['appointments', auth.user_id],
         });
+    } catch (cause) {
+      setError(humanError(cause));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  /** Other times while choosing: one doctor's times, or (no doctor) every doctor's soonest again. */
+  async function moreTimes(result: TriageOut, doctor: Candidate | null) {
+    if (busy || active !== result || active.status !== 'awaiting_choice')
+      return;
+    setBusy(true);
+    setWaiting('Checking the calendar…');
+    setError('');
+    try {
+      const response = await api<TriageOut>(
+        `/triage/${result.thread_id}/resume`,
+        {
+          method: 'POST',
+          body: JSON.stringify({
+            more_times: doctor ? { doctor_id: doctor.doctor_id } : {},
+          }),
+        },
+        auth,
+      );
+      setActive(response);
+      setMessages((previous) => [
+        ...previous,
+        {
+          id: crypto.randomUUID(),
+          role: 'user',
+          text: doctor
+            ? `Show me more times with ${doctor.doctor_name}.`
+            : 'Show me the other doctors.',
+        },
+        {
+          id: crypto.randomUUID(),
+          role: 'assistant',
+          text: describe(response),
+          result: response,
+        },
+      ]);
     } catch (cause) {
       setError(humanError(cause));
     } finally {
@@ -549,67 +739,21 @@ export function TriagePage() {
                         />
                       )}
                     {message.result?.candidates && (
-                      <div className="mt-4 space-y-2.5">
-                        {message.result.candidates.map((candidate) => (
-                          <article
-                            key={candidate.slot_id}
-                            className="rounded-xl border border-line p-4"
-                          >
-                            <div className="flex items-start gap-3">
-                              <span className="flex size-10 shrink-0 items-center justify-center rounded-full bg-[#f1eee7] text-xs font-semibold text-[#6d6048]">
-                                {candidate.doctor_name
-                                  .split(' ')
-                                  .map((name) => name[0])
-                                  .slice(0, 2)
-                                  .join('')}
-                              </span>
-                              <div className="min-w-0">
-                                <h3 className="text-sm font-semibold">
-                                  {candidate.doctor_name}
-                                </h3>
-                                <p className="mt-1 text-xs text-muted">
-                                  {message.result?.specialty ??
-                                    'Clinic appointment'}
-                                </p>
-                              </div>
-                            </div>
-                            <p className="mt-3 flex items-center gap-2 text-xs text-muted">
-                              <MapPin size={13} />
-                              {candidate.clinic_name}
-                            </p>
-                            <div className="mt-3 flex flex-wrap items-center justify-between gap-2 border-t border-line pt-3">
-                              <span className="flex items-center gap-2 text-xs font-medium">
-                                <CalendarDays
-                                  size={14}
-                                  className="text-brand-600"
-                                />
-                                {candidate.display_time} IST
-                              </span>
-                              <Button
-                                variant="secondary"
-                                className="px-3 text-xs"
-                                busy={
-                                  busy &&
-                                  active?.thread_id ===
-                                    message.result?.thread_id
-                                }
-                                disabled={
-                                  busy ||
-                                  active?.thread_id !==
-                                    message.result?.thread_id ||
-                                  active?.status !== 'awaiting_choice'
-                                }
-                                onClick={() =>
-                                  void book(message.result!, candidate)
-                                }
-                              >
-                                Choose time
-                                <ArrowRight size={13} />
-                              </Button>
-                            </div>
-                          </article>
-                        ))}
-                      </div>
+                      <OptionCards
+                        result={message.result}
+                        live={
+                          !busy &&
+                          active === message.result &&
+                          active.status === 'awaiting_choice'
+                        }
+                        busy={busy && active === message.result}
+                        onBook={(candidate) =>
+                          void book(message.result!, candidate)
+                        }
+                        onMoreTimes={(doctor) =>
+                          void moreTimes(message.result!, doctor)
+                        }
+                      />
                     )}
                     {message.result?.booking_id && (
                       <div className="mt-4 rounded-xl border border-brand-200 bg-brand-50 p-4">
@@ -652,11 +796,7 @@ export function TriagePage() {
             {busy && (
               <div className="flex items-center gap-3" role="status">
                 <AssistantAvatar />
-                <span className="text-xs text-muted">
-                  {active
-                    ? 'Confirming your appointment…'
-                    : 'Checking care options…'}
-                </span>
+                <span className="text-xs text-muted">{waiting}</span>
                 <span className="flex gap-1" aria-hidden="true">
                   {[0, 1, 2].map((dot) => (
                     <span

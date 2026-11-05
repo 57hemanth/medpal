@@ -72,7 +72,12 @@ CROSS JOIN LATERAL (
     SELECT s.slot_id, s.clinic_id, s.starts_at
     FROM slot s
     WHERE s.doctor_id = d.doctor_id
-      AND s.starts_at > now()
+      AND s.starts_at > GREATEST(now(), %(from)s::timestamptz)
+      AND (%(until)s::timestamptz IS NULL OR s.starts_at < %(until)s::timestamptz)
+      AND (%(hour_from)s::int IS NULL
+           OR extract(hour FROM s.starts_at AT TIME ZONE 'Asia/Kolkata') >= %(hour_from)s::int)
+      AND (%(hour_to)s::int IS NULL
+           OR extract(hour FROM s.starts_at AT TIME ZONE 'Asia/Kolkata') < %(hour_to)s::int)
       AND NOT (s.slot_id = ANY(%(exclude)s::uuid[]))
       AND (%(city)s::text IS NULL
            OR s.clinic_id IN (SELECT clinic_id FROM clinic WHERE city = %(city)s::text))
@@ -89,6 +94,19 @@ LIMIT %(limit)s
 """
 
 
+@dataclass(frozen=True)
+class TimeWindow:
+    """Limits on when a slot may start. Hours are clinic local time (IST), [hour_from, hour_to)."""
+
+    start: datetime | None = None
+    end: datetime | None = None
+    hour_from: int | None = None
+    hour_to: int | None = None
+
+    def params(self) -> dict[str, Any]:
+        return {"from": self.start, "until": self.end, "hour_from": self.hour_from, "hour_to": self.hour_to}
+
+
 async def shortlist(
     pool: AsyncConnectionPool,
     specialty: str,
@@ -96,6 +114,7 @@ async def shortlist(
     limit: int = 3,
     exclude_slot_ids: list[str] | None = None,
     preferences: PatientPreferences | None = None,
+    window: TimeWindow | None = None,
 ) -> list[Candidate]:
     prefs = preferences or PatientPreferences()
     params = {
@@ -105,9 +124,52 @@ async def shortlist(
         "city": prefs.city,
         "language": prefs.language,
         "preferred": prefs.preferred_clinic_id,
+        **(window or TimeWindow()).params(),
     }
     async with pool.connection() as conn:
         rows = await _all(await conn.execute(_SHORTLIST, params))
+    return [Candidate(**r) for r in rows]
+
+
+# One doctor's free slots in a window, soonest first, at clinics in the patient's city.
+_DOCTOR_TIMES = """
+SELECT d.doctor_id::text, d.name AS doctor_name, s.slot_id::text, c.name AS clinic_name, s.starts_at
+FROM slot s
+JOIN doctor d ON d.doctor_id = s.doctor_id
+JOIN clinic c ON c.clinic_id = s.clinic_id
+WHERE s.doctor_id = %(doctor)s::uuid
+  AND s.starts_at > GREATEST(now(), %(from)s::timestamptz)
+  AND (%(until)s::timestamptz IS NULL OR s.starts_at < %(until)s::timestamptz)
+  AND (%(hour_from)s::int IS NULL
+       OR extract(hour FROM s.starts_at AT TIME ZONE 'Asia/Kolkata') >= %(hour_from)s::int)
+  AND (%(hour_to)s::int IS NULL
+       OR extract(hour FROM s.starts_at AT TIME ZONE 'Asia/Kolkata') < %(hour_to)s::int)
+  AND NOT (s.slot_id = ANY(%(exclude)s::uuid[]))
+  AND (%(city)s::text IS NULL OR c.city = %(city)s::text)
+  AND s.capacity > app_booked_appointment_count(s.slot_id)
+ORDER BY s.starts_at
+LIMIT %(limit)s
+"""
+
+
+async def doctor_times(
+    pool: AsyncConnectionPool,
+    doctor_id: str,
+    *,
+    limit: int = 200,
+    exclude_slot_ids: list[str] | None = None,
+    preferences: PatientPreferences | None = None,
+    window: TimeWindow | None = None,
+) -> list[Candidate]:
+    params = {
+        "doctor": doctor_id,
+        "exclude": exclude_slot_ids or [],
+        "limit": limit,
+        "city": (preferences or PatientPreferences()).city,
+        **(window or TimeWindow()).params(),
+    }
+    async with pool.connection() as conn:
+        rows = await _all(await conn.execute(_DOCTOR_TIMES, params))
     return [Candidate(**r) for r in rows]
 
 

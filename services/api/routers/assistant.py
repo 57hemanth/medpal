@@ -5,14 +5,18 @@ continues a paused specialist on that specialist's endpoint (e.g. POST /triage/{
 """
 
 import uuid
+from datetime import datetime
 from typing import Annotated, Any, Literal
 
 from fastapi import APIRouter, Depends, FastAPI, Request
+from langgraph.types import Command
 from pydantic import BaseModel, Field
 
 from services.agent.supervisor.graph import build_supervisor_graph
 from services.agent.supervisor.planner import ModelPlanner
 from services.agent.supervisor.visit import SPECIALTY_ABOUT, VisitFacts, answer_visit, asked_for
+from services.agent.triage.times import TimeRequest, parse_time_request
+from services.agent.triage.tools import CLINIC_TZ
 from services.api.deps import auth_ctx
 from services.api.routers.scribe import _session_out
 from services.api.routers.triage import _to_out
@@ -126,10 +130,39 @@ class AppSpecialists:
         """Facts about this chat's appointment, read from the triage run's saved state and stated by
         code (services/agent/supervisor/visit.py). No model writes the reply; only the caller's own run
         is readable."""
-        snapshot = await self._state.triage_graph.aget_state({"configurable": {"thread_id": thread_id}})
+        config = {"configurable": {"thread_id": thread_id}}
+        snapshot = await self._state.triage_graph.aget_state(config)
         values = snapshot.values or {}
         if values.get("auth", {}).get("user_id") != auth["user_id"]:
             return {"status": "not_found", "reply": "I can't find an appointment in this conversation."}
+        request = parse_time_request(
+            question, values.get("doctors_offered") or [], datetime.now(CLINIC_TZ).date()
+        )
+        if request and "present_options" in (snapshot.next or ()):
+            if request.doctor_id is None and not (request.day or request.part_of_day):
+                doctors = {c["doctor_id"]: c["doctor_name"] for c in values.get("candidates") or []}
+                if len(doctors) > 1:
+                    example = next(iter(doctors.values()))
+                    return {
+                        "status": "options",
+                        "reply": "Which doctor would you like other times for? Tap “More times” under "
+                        f"their name, or say “more times with {example}”. You can also ask for a day, "
+                        "like “tomorrow evening”.",
+                        "thread_id": thread_id,
+                    }
+                request = TimeRequest(doctor_id=next(iter(doctors), None), day=None, part_of_day=None)
+            # The patient is still choosing: continue that same run with the new times.
+            out = await self._state.triage_graph.ainvoke(
+                Command(resume={"more_times": request.as_resume()}), config
+            )
+            return _to_out(thread_id, out).model_dump()
+        if request and values.get("booking_id"):
+            return {
+                "status": "booked",
+                "reply": "This appointment is already booked. To change the time, cancel it under "
+                "Appointments and ask me again; I'll find you a new time.",
+                "thread_id": thread_id,
+            }
         specialty = values.get("specialty")
         candidates = values.get("candidates") or []
         chosen = next((c for c in candidates if c["slot_id"] == values.get("chosen_slot_id")), None)

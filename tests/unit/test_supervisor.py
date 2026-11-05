@@ -251,3 +251,16 @@ async def test_a_new_symptom_in_a_follow_up_still_goes_to_triage():
         conversation_thread_id="triage-1",
     )
     assert sorted(c[0] for c in sp.calls) == ["triage", "visit"]
+
+
+async def test_asking_for_other_times_continues_the_booking_even_if_the_model_says_triage():
+    # A new triage would ask the safety questions again and forget the doctors already offered.
+    sp = FakeSpecialists()
+    await run(
+        sp,
+        PATIENT,
+        "Need other timing slots for chetan doctor",
+        FixedPlanner([(0, "triage")]),
+        conversation_thread_id="triage-1",
+    )
+    assert [c[0] for c in sp.calls] == ["visit"]

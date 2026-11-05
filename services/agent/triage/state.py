@@ -36,6 +36,12 @@ class TriageState(TypedDict, total=False):
     specialty_rule_id: str | None
     needs_clarification: bool
     candidates: list[CandidateView]
+    # Every doctor offered in this run: a patient may ask for more times with any of them.
+    doctors_offered: list[dict[str, str]]
+    # Set while the patient asks for other times: {"doctor_id", "day", "part_of_day"}.
+    time_request: dict[str, str | None] | None
+    # Shown above the options, e.g. "Chetan Ranade has no evening times; these are the next available."
+    options_note: str | None
     excluded_slot_ids: list[str]  # slots that turned out full; never re-offered in this run
     reoffer_count: int
     chosen_slot_id: str | None

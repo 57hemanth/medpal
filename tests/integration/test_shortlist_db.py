@@ -129,3 +129,21 @@ async def test_preferences_are_not_readable_for_another_patient(pool, two_city_w
     other = {"user_id": world["user"], "role": "patient", "acting_for_patient_id": world["patient"]}
     prefs = await scheduling.patient_preferences(pool, other, two_city_world["patient"])
     assert prefs == scheduling.PatientPreferences()  # RLS hides the row: nothing leaks, defaults apply
+
+
+async def test_one_doctors_times_skip_booked_and_excluded_slots(pool, specialty_world):
+    w = specialty_world
+    doctor = w["doctors"][0]
+    times = await scheduling.doctor_times(pool, doctor, exclude_slot_ids=[w["slots"][doctor][2]])
+    assert [c.slot_id for c in times] == [w["slots"][doctor][1]]  # [0] is booked, [2] excluded
+    assert {c.doctor_id for c in times} == {doctor}
+
+
+async def test_a_time_window_narrows_both_queries(pool, specialty_world):
+    w = specialty_world
+    # Starting after doctor 1's slots: doctors 0 and 1 drop out of the shortlist.
+    later = datetime.now(UTC) + timedelta(hours=3, minutes=1)
+    result = await scheduling.shortlist(pool, w["name"], window=scheduling.TimeWindow(start=later))
+    assert [c.doctor_id for c in result] == w["doctors"][2:]
+    ended = scheduling.TimeWindow(end=datetime.now(UTC))
+    assert await scheduling.doctor_times(pool, w["doctors"][3], window=ended) == []

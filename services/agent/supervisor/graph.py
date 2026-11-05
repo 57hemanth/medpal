@@ -27,6 +27,7 @@ from langgraph.graph import END, START, StateGraph
 from langgraph.types import Send
 
 from services.agent.triage.rules import match_red_flags, match_specialty
+from services.agent.triage.times import asks_other_times
 from services.platform.auth import AuthContext
 
 Specialist = Literal["triage", "records", "scribe", "visit"]
@@ -158,6 +159,12 @@ def split_clauses(message: str) -> list[str]:
     return parts or [message.strip()]
 
 
+def is_time_followup(clause: str) -> bool:
+    """ "Other times for Chetan?", "anything tomorrow evening?": a follow-up to the options in this chat,
+    never a new triage (which would ask the safety questions again). A symptom makes it a new triage."""
+    return asks_other_times(clause) and not _SYMPTOM_ONLY.search(clause)
+
+
 def rule_assign(
     clauses: list[str], role: str, *, has_transcript: bool, has_conversation: bool = False
 ) -> list[tuple[int, str]]:
@@ -166,7 +173,7 @@ def rule_assign(
         if (
             has_conversation
             and role == "patient"
-            and _VISIT.search(clause)
+            and (_VISIT.search(clause) or is_time_followup(clause))
             and not _SYMPTOM_ONLY.search(clause)
         ):
             out.append((i, "visit"))
@@ -267,6 +274,11 @@ def build_supervisor_graph(specialists: Specialists, planner: Planner | None = N
             assignments = rule_assign(
                 clauses, role, has_transcript=has_transcript, has_conversation=has_conversation
             )
+        if role == "patient" and has_conversation:
+            # Asking for other times continues the booking in this chat, whatever the planner said.
+            followups = {i for i, clause in enumerate(clauses) if is_time_followup(clause)}
+            assignments = [(i, s) for i, s in assignments if i not in followups]
+            assignments += [(i, "visit") for i in sorted(followups)]
         if role == "doctor" and has_transcript and not any(s == "scribe" for _, s in assignments):
             assignments.append((len(clauses), "scribe"))
         if role == "patient" and not assignments:

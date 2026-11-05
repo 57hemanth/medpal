@@ -15,7 +15,8 @@ SYSTEM = (
     "'triage' (symptoms, wanting to see or book a doctor), 'records' (questions about the person's own "
     "medical reports, lab results or uploaded documents), 'scribe' (a doctor asking to draft or write up "
     "the consultation note), 'visit' (a follow-up about the appointment already found or booked in this "
-    "conversation: which doctor, their specialty, the clinic, the time), or 'none'. "
+    "conversation: which doctor, their specialty, the clinic, the time, or asking for other times or "
+    "days), or 'none'. "
     "Only use specialists from the allowed list. Never diagnose. "
     "Return one route per clause number."
 )
