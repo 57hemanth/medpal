@@ -21,9 +21,15 @@ class Settings(BaseSettings):
     checkpoint_schema: str = "langgraph"
     db_pool_max_size: int = 10
 
-    # "dev" trusts X-Dev-* headers so the stack runs before OIDC login (Keycloak) is added.
-    # It is refused outside dev/test by the validator below.
-    auth_mode: Literal["dev", "oidc"] = "dev"
+    # "otp": mobile number + one-time code, session in an HttpOnly cookie (services/platform/signin.py).
+    # "oidc": bearer tokens from an identity provider. "dev": also trusts X-Dev-* headers so tests and
+    # tooling can act as any seeded identity; refused in production by the validator below.
+    # In dev mode a signed-in session cookie is honoured too, so the web app uses real sign-in.
+    auth_mode: Literal["dev", "otp", "oidc"] = "dev"
+    session_secret: str = "dev-only-session-secret-change-me-0000000000"  # noqa: S105  refused in prod
+    session_hours: int = 12
+    # How one-time codes are delivered. "log" writes them to the server log (development only).
+    sms_provider: Literal["log"] = "log"
     oidc_issuer: str | None = None
     oidc_audience: str | None = None
     oidc_jwks_url: str | None = None
@@ -93,6 +99,11 @@ class Settings(BaseSettings):
     def _no_dev_auth_in_prod(self) -> "Settings":
         if self.env == "prod" and self.auth_mode == "dev":
             raise ValueError("auth_mode=dev is not allowed when env=prod")
+        weak_secret = len(self.session_secret) < 32 or self.session_secret.startswith("dev-only")
+        if self.env == "prod" and self.auth_mode == "otp" and weak_secret:
+            raise ValueError("production requires a random MEDPAL_SESSION_SECRET of at least 32 characters")
+        if self.env == "prod" and self.auth_mode == "otp" and self.sms_provider == "log":
+            raise ValueError("production sign-in by mobile needs a real SMS provider, not the log")
         if self.chat_fallback_provider and not self.chat_fallback_model:
             raise ValueError("chat_fallback_model is required when chat_fallback_provider is set")
         if self.env == "prod" and self.chat_provider == "fake":

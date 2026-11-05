@@ -1,11 +1,14 @@
 """Who is calling, resolved the same way for every entry point (REST API and MCP tool server).
 
+* otp mode: the signed session cookie set at mobile sign-in (services/platform/signin.py).
 * oidc mode: a signed bearer token, verified against the issuer's keys. The header is only a carrier;
   the identity comes from the verified signature, never from the header text itself.
-* dev mode: X-Dev-* headers, for local development only. Settings refuse dev mode in production.
+* dev mode: a signed-in session cookie if there is one, else X-Dev-* headers (tests and tooling).
+  Settings refuse dev mode in production.
 """
 
 from collections.abc import Mapping
+from http.cookies import CookieError, SimpleCookie
 
 from .auth import ROLES, AuthContext
 from .config import Settings
@@ -16,9 +19,34 @@ class IdentityError(ValueError):
     pass
 
 
+def _session_cookie(h: Mapping[str, str]) -> str | None:
+    from .signin import COOKIE
+
+    raw = h.get("cookie")
+    if not raw:
+        return None
+    try:
+        jar = SimpleCookie(raw)
+    except CookieError:
+        return None
+    morsel = jar.get(COOKIE)
+    return morsel.value if morsel else None
+
+
 def resolve_identity(headers: Mapping[str, str] | None, settings: Settings) -> AuthContext:
+    from .signin import SignInError, auth_from_session
+
     h = {k.lower(): v for k, v in (headers or {}).items()}
-    if settings.auth_mode != "dev":
+    if settings.auth_mode in ("otp", "dev"):
+        token = _session_cookie(h)
+        if token:
+            try:
+                return auth_from_session(token, settings)
+            except SignInError as exc:
+                raise IdentityError(str(exc)) from exc
+        if settings.auth_mode == "otp":
+            raise IdentityError("not signed in")
+    if settings.auth_mode == "oidc":
         authorization = h.get("authorization", "")
         if not authorization.startswith("Bearer "):
             raise IdentityError("missing bearer token")

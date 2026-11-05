@@ -17,7 +17,7 @@ from services.agent.scribe.tools import PgScribeTools
 from services.agent.triage.assessor import ModelAssessor
 from services.agent.triage.graph import build_triage_graph
 from services.agent.triage.tools import PgTriageTools
-from services.api.routers import assistant, consent, me, ops, pharmacy, records, scribe, triage
+from services.api.routers import assistant, auth, consent, ops, pharmacy, records, scribe, triage
 from services.mcp_server.server import build_mcp_server
 from services.platform.config import get_settings
 from services.platform.db import app_pool, checkpoint_pool
@@ -86,7 +86,7 @@ def create_app(*, triage_graph: Any | None = None) -> FastAPI:
     app.state.mcp_server = build_mcp_server(lambda: app.state.app_pool)
     app.mount("/mcp", app.state.mcp_server.streamable_http_app(streamable_http_path="/", host="0.0.0.0"))  # noqa: S104
     app.include_router(triage.router)
-    app.include_router(me.router)
+    app.include_router(auth.router)
     app.include_router(records.router)
     app.include_router(consent.router)
     app.include_router(scribe.router)
