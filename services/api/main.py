@@ -16,7 +16,7 @@ from services.agent.scribe.graph import build_scribe_graph
 from services.agent.scribe.tools import PgScribeTools
 from services.agent.triage.graph import build_triage_graph
 from services.agent.triage.tools import PgTriageTools
-from services.api.routers import consent, me, ops, records, scribe, triage
+from services.api.routers import assistant, consent, me, ops, records, scribe, triage
 from services.mcp_server.server import build_mcp_server
 from services.platform.config import get_settings
 from services.platform.db import app_pool, checkpoint_pool
@@ -50,6 +50,7 @@ async def _postgres_lifespan(app: FastAPI) -> AsyncIterator[None]:
         app.state.scribe_graph = build_scribe_graph(PgScribeTools(pool, app.state.chat_client)).compile(
             checkpointer=saver
         )
+        app.state.supervisor_graph = assistant.build_assistant(app)
         async with app.state.mcp_server.session_manager.run():
             yield
     finally:
@@ -82,6 +83,7 @@ def create_app(*, triage_graph: Any | None = None) -> FastAPI:
     app.include_router(consent.router)
     app.include_router(scribe.router)
     app.include_router(ops.router)
+    app.include_router(assistant.router)
 
     @app.get("/healthz", tags=["ops"])
     async def healthz() -> dict[str, str]:
