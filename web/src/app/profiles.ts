@@ -9,8 +9,12 @@ import {
   MessageCircle,
   NotebookPen,
   ScrollText,
+  Pill,
   ShieldCheck,
   Stethoscope,
+  Gauge,
+  Package,
+  ClipboardPlus,
   Users,
   type LucideIcon,
 } from 'lucide-react';
@@ -53,6 +57,13 @@ export const profiles: {
     icon: LayoutList,
   },
   {
+    role: 'pharmacist',
+    name: 'Pharmacy',
+    initials: 'PH',
+    title: 'Pharmacist, Hinjewadi Clinic',
+    icon: Pill,
+  },
+  {
     role: 'compliance',
     name: 'Compliance',
     initials: 'CO',
@@ -76,6 +87,8 @@ export const navigation: Record<string, NavGroup[]> = {
         { to: '/care', label: 'Care assistant', icon: MessageCircle },
         { to: '/appointments', label: 'Appointments', icon: CalendarDays },
         { to: '/records', label: 'Health records', icon: FileText },
+        { to: '/notes', label: 'Visit notes', icon: NotebookPen },
+        { to: '/prescriptions', label: 'Prescriptions', icon: Pill },
       ],
     },
     {
@@ -94,6 +107,8 @@ export const navigation: Record<string, NavGroup[]> = {
       label: 'Family care',
       items: [
         { to: '/records', label: 'Shared records', icon: FileText },
+        { to: '/notes', label: 'Visit notes', icon: NotebookPen },
+        { to: '/prescriptions', label: 'Prescriptions', icon: Pill },
         { to: '/sharing', label: 'Access granted to me', icon: ShieldCheck },
       ],
     },
@@ -106,8 +121,10 @@ export const navigation: Record<string, NavGroup[]> = {
     {
       label: 'Clinical',
       items: [
-        { to: '/consultations', label: 'Consultations', icon: NotebookPen },
+        { to: '/consultations', label: 'Consultations', icon: ClipboardPlus },
+        { to: '/notes', label: 'Signed notes', icon: NotebookPen },
         { to: '/records', label: 'Patient records', icon: FileText },
+        { to: '/medicines', label: 'Medicines', icon: Pill },
       ],
     },
   ],
@@ -124,6 +141,19 @@ export const navigation: Record<string, NavGroup[]> = {
       ],
     },
   ],
+  pharmacist: [
+    {
+      label: 'Overview',
+      items: [{ to: '/', label: 'Dispensing', icon: LayoutDashboard }],
+    },
+    {
+      label: 'Pharmacy',
+      items: [
+        { to: '/stock', label: 'Stock & restock', icon: Package },
+        { to: '/medicines', label: 'Medicines', icon: Pill },
+      ],
+    },
+  ],
   compliance: [
     {
       label: 'Overview',
@@ -132,6 +162,7 @@ export const navigation: Record<string, NavGroup[]> = {
     {
       label: 'Governance',
       items: [
+        { to: '/quality', label: 'Quality', icon: Gauge },
         { to: '/audit', label: 'Audit log', icon: ScrollText },
         { to: '/records', label: 'Records access', icon: FileText },
       ],

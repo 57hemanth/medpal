@@ -182,6 +182,14 @@ const STATUS: Record<
   queued: { label: 'Queued', tone: 'blue' },
   failed: { label: 'Failed', tone: 'red' },
   signed: { label: 'Signed', tone: 'green' },
+  reserved: { label: 'Held at pharmacy', tone: 'blue' },
+  dispensed: { label: 'Collected', tone: 'green' },
+  released: { label: 'Released', tone: 'neutral' },
+  in_stock: { label: 'In stock', tone: 'green' },
+  low: { label: 'Low', tone: 'amber' },
+  out_of_stock: { label: 'Out of stock', tone: 'red' },
+  stale: { label: 'Count is old', tone: 'amber' },
+  not_held: { label: 'Not held', tone: 'amber' },
 };
 
 /** One vocabulary for every status shown in the product. */

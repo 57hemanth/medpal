@@ -19,6 +19,12 @@ import { useSession } from '../auth/AuthProvider';
 import { Badge, Brand } from '../components/ui';
 import { AppointmentsPage } from '../features/appointments/AppointmentsPage';
 import { AuditPage } from '../features/compliance/AuditPage';
+import { QualityPage } from '../features/compliance/QualityPage';
+import { NotesPage } from '../features/notes/NotesPage';
+import { PrescriptionsPage } from '../features/notes/PrescriptionsPage';
+import { MedicinesPage } from '../features/pharmacy/MedicinesPage';
+import { PharmacyHome } from '../features/pharmacy/PharmacyHome';
+import { StockPage } from '../features/pharmacy/StockPage';
 import { OperationsPage } from '../features/compliance/OperationsPage';
 import { ConsentPage } from '../features/consent/ConsentPage';
 import { FrontDeskPage } from '../features/frontdesk/FrontDeskPage';
@@ -193,6 +199,7 @@ const HOME: Record<string, React.ReactNode> = {
   caregiver: <PatientHome />,
   doctor: <DoctorHome />,
   desk: <DeskHome />,
+  pharmacist: <PharmacyHome />,
   compliance: <OperationsPage />,
 };
 
@@ -202,11 +209,28 @@ const ROUTES: Record<string, Record<string, React.ReactNode>> = {
     '/appointments': <AppointmentsPage />,
     '/records': <RecordsPage />,
     '/sharing': <ConsentPage />,
+    '/notes': <NotesPage />,
+    '/prescriptions': <PrescriptionsPage />,
   },
-  caregiver: { '/records': <RecordsPage />, '/sharing': <ConsentPage /> },
-  doctor: { '/consultations': <ScribePage />, '/records': <RecordsPage /> },
+  caregiver: {
+    '/records': <RecordsPage />,
+    '/sharing': <ConsentPage />,
+    '/notes': <NotesPage />,
+    '/prescriptions': <PrescriptionsPage />,
+  },
+  doctor: {
+    '/consultations': <ScribePage />,
+    '/notes': <NotesPage />,
+    '/records': <RecordsPage />,
+    '/medicines': <MedicinesPage />,
+  },
+  pharmacist: { '/stock': <StockPage />, '/medicines': <MedicinesPage /> },
   desk: { '/queue': <FrontDeskPage />, '/appointments': <AppointmentsPage /> },
-  compliance: { '/audit': <AuditPage />, '/records': <RecordsPage /> },
+  compliance: {
+    '/quality': <QualityPage />,
+    '/audit': <AuditPage />,
+    '/records': <RecordsPage />,
+  },
 };
 
 export function App() {

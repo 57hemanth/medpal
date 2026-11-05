@@ -6,12 +6,18 @@ import {
   FileText,
   MapPin,
   MessageCircle,
+  Pill,
   ShieldCheck,
   UploadCloud,
 } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { api } from '../../api/client';
-import type { Appointment, Consent, HealthRecord } from '../../api/types';
+import type {
+  Appointment,
+  Consent,
+  HealthRecord,
+  PatientNotification,
+} from '../../api/types';
 import { useAuth } from '../../auth/AuthProvider';
 import { RecordViewer } from '../records/RecordViewer';
 import {
@@ -97,6 +103,11 @@ export function PatientHome() {
     queryKey: ['consents', auth.user_id, auth.role],
     queryFn: () => api<Consent[]>('/api/consents', {}, auth),
   });
+  const notifications = useQuery({
+    queryKey: ['notifications', auth.user_id, auth.role],
+    queryFn: () => api<PatientNotification[]>('/api/notifications', {}, auth),
+  });
+  const unread = (notifications.data ?? []).filter((n) => !n.read_at);
   const next = appointments.data?.[0];
   // Patients see who can read THEIR record; caregivers see what was shared with them.
   const activeConsents = (consents.data ?? []).filter(
@@ -121,6 +132,38 @@ export function PatientHome() {
         }
       />
 
+      {unread.map((note) => (
+        <div
+          key={note.notification_id}
+          role="status"
+          className="mb-4 flex items-center gap-3 rounded-xl border border-brand-100 bg-brand-50 px-4 py-3 text-[14px] text-brand-900"
+        >
+          <Pill
+            size={17}
+            className="shrink-0 text-brand-700"
+            aria-hidden="true"
+          />
+          <span className="flex-1">{note.body}</span>
+          <Link
+            to="/prescriptions"
+            className="text-[13px] font-semibold text-brand-700"
+          >
+            View
+          </Link>
+          <button
+            className="text-[12px] text-muted hover:text-ink"
+            onClick={() =>
+              void api(
+                `/api/notifications/${note.notification_id}/read`,
+                { method: 'POST' },
+                auth,
+              ).then(() => notifications.refetch())
+            }
+          >
+            Dismiss
+          </button>
+        </div>
+      ))}
       {!caregiver && (
         <div className="mb-6 grid gap-3 md:grid-cols-3">
           <QuickAction

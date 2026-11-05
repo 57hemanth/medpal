@@ -104,3 +104,106 @@ export interface AuditEvent {
   purpose: string;
   trace_id: string | null;
 }
+
+export interface StockRow {
+  medicine_id: string;
+  name: string;
+  composition: string;
+  therapeutic_class: string | null;
+  pack_size: string | null;
+  qty: number | null;
+  as_of: string | null;
+  reserved: number;
+  available: number;
+  demand: number;
+  unmet: number;
+  status: 'in_stock' | 'low' | 'out_of_stock' | 'stale';
+}
+
+export interface QueueItem {
+  reservation_id: string;
+  status: 'reserved' | 'dispensed' | 'released';
+  reserved_at: string;
+  closed_at: string | null;
+  patient_name: string | null;
+  medicine_text: string;
+  medicine: string;
+  pack_size: string | null;
+  doctor_name: string | null;
+}
+
+export interface Medicine {
+  medicine_id: string;
+  name: string;
+  composition: string;
+  manufacturer: string | null;
+  pack_size: string | null;
+  price_inr: string | number | null;
+  therapeutic_class: string | null;
+  source: string;
+  clinics_available: number;
+  clinics_total: number;
+}
+
+export interface Prescription {
+  rx_id: string;
+  medicine_text: string;
+  medicine: string | null;
+  composition: string | null;
+  pack_size: string | null;
+  signed_at: string;
+  doctor_name: string | null;
+  patient_name: string | null;
+  reservation_status: 'reserved' | 'dispensed' | 'released' | null;
+  clinic_name: string | null;
+}
+
+export interface SignedNote {
+  note_id: string;
+  version: number;
+  signed_at: string;
+  soap_json: {
+    subjective: string;
+    objective: string;
+    assessment: string;
+    plan: string;
+    medicines?: string[];
+  };
+  edit_history: { action: string; at?: string; fields?: string[] }[];
+  content_hash: string;
+  patient_id: string;
+  patient_name: string | null;
+  doctor_name: string | null;
+  clinic_name: string | null;
+  transcript: string | null;
+  prescriptions: {
+    medicine: string;
+    status: string | null;
+    clinic: string | null;
+  }[];
+}
+
+export interface PatientNotification {
+  notification_id: string;
+  kind: string;
+  body: string;
+  created_at: string;
+  read_at: string | null;
+}
+
+export interface Quality {
+  evaluation:
+    | (Record<string, unknown> & {
+        file: string;
+        gates?: Record<string, boolean>;
+      })
+    | null;
+  live: {
+    file: string;
+    run_at: string;
+    passed: number;
+    total: number;
+    areas: Record<string, { passed: number; total: number }>;
+    summary: string[];
+  } | null;
+}

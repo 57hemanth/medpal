@@ -29,7 +29,7 @@ const DEV_USERS: Record<Role, AuthContext> = {
     acting_for_patient_id: null,
   },
   pharmacist: {
-    user_id: '00000000-0000-0000-0000-0000000e0005',
+    user_id: '00000000-0000-0000-0000-0000000e0007',
     role: 'pharmacist',
     acting_for_patient_id: null,
   },

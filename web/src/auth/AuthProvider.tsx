@@ -9,7 +9,14 @@ import { type AuthContext, type Role, devIdentity } from '../api/client';
 type Session = { auth: AuthContext; switchTo: (role: Role) => void };
 const Context = createContext<Session | null>(null);
 const KEY = 'medpal.profile';
-const ROLES: Role[] = ['patient', 'caregiver', 'doctor', 'desk', 'compliance'];
+const ROLES: Role[] = [
+  'patient',
+  'caregiver',
+  'doctor',
+  'desk',
+  'pharmacist',
+  'compliance',
+];
 
 function initialRole(): Role {
   try {

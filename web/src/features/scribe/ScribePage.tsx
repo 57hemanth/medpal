@@ -38,12 +38,25 @@ interface Consultation {
   encounter_id: string | null;
   signed: boolean;
 }
+interface Alternative {
+  medicine: string;
+  kind: 'same_composition' | 'same_class' | 'other_clinic';
+  available: number;
+  clinic: string | null;
+}
 interface StockFlag {
   medicine: string;
   status: 'in_stock' | 'out_of_stock' | 'stale' | 'not_in_formulary';
   qty: number | null;
   as_of: string | null;
+  alternatives?: Alternative[];
 }
+
+const ALTERNATIVE_LABEL: Record<Alternative['kind'], string> = {
+  same_composition: 'Same composition',
+  same_class: 'Same class (a different medicine)',
+  other_clinic: 'Available at',
+};
 interface Session {
   thread_id: string;
   status: 'awaiting_review' | 'signed';
@@ -62,7 +75,7 @@ const STOCK_LABEL: Record<
     text: (f: StockFlag) => string;
   }
 > = {
-  in_stock: { tone: 'green', text: (f) => `In stock · ${f.qty}` },
+  in_stock: { tone: 'green', text: (f) => `In stock · ${f.qty} available` },
   out_of_stock: { tone: 'red', text: () => 'Out of stock' },
   stale: {
     tone: 'amber',
@@ -402,14 +415,59 @@ export function ScribePage() {
                 />
                 <ul className="mt-3 space-y-1.5" aria-label="Stock">
                   {session.stock_flags.map((flag) => (
-                    <li
-                      key={flag.medicine}
-                      className="flex items-center justify-between gap-3 text-xs"
-                    >
-                      <span>{flag.medicine}</span>
-                      <Badge tone={STOCK_LABEL[flag.status].tone}>
-                        {STOCK_LABEL[flag.status].text(flag)}
-                      </Badge>
+                    <li key={flag.medicine} className="text-xs">
+                      <span className="flex items-center justify-between gap-3">
+                        <span>{flag.medicine}</span>
+                        <Badge tone={STOCK_LABEL[flag.status].tone}>
+                          {STOCK_LABEL[flag.status].text(flag)}
+                        </Badge>
+                      </span>
+                      {!!flag.alternatives?.length && (
+                        <ul
+                          className="mt-1.5 space-y-1 rounded-lg border border-line bg-canvas p-2"
+                          aria-label={`Alternatives to ${flag.medicine}`}
+                        >
+                          {flag.alternatives.map((alt) => (
+                            <li
+                              key={`${alt.kind}-${alt.medicine}-${alt.clinic}`}
+                              className="flex items-center justify-between gap-2"
+                            >
+                              <span className="text-muted">
+                                {ALTERNATIVE_LABEL[alt.kind]}{' '}
+                                <span className="font-medium text-ink">
+                                  {alt.kind === 'other_clinic'
+                                    ? alt.clinic
+                                    : alt.medicine}
+                                </span>{' '}
+                                · {alt.available} available
+                              </span>
+                              {alt.kind !== 'other_clinic' && (
+                                <button
+                                  className="font-semibold text-brand-700 hover:text-brand-900 disabled:opacity-50"
+                                  disabled={!!busy}
+                                  onClick={() =>
+                                    setSoap({
+                                      ...soap,
+                                      medicines: soap.medicines.map((m) =>
+                                        m.toLowerCase() ===
+                                        flag.medicine.toLowerCase()
+                                          ? alt.medicine
+                                          : m,
+                                      ),
+                                    })
+                                  }
+                                >
+                                  Use instead
+                                </button>
+                              )}
+                            </li>
+                          ))}
+                          <li className="pt-1 text-[11px] text-subtle">
+                            Your choice: nothing is swapped automatically. Save
+                            edits to re-check stock.
+                          </li>
+                        </ul>
+                      )}
                     </li>
                   ))}
                 </ul>

@@ -25,7 +25,26 @@ const review = {
   medicines: ['Atorvastatin', 'Metformin'],
   stock_flags: [
     { medicine: 'Atorvastatin', status: 'in_stock', qty: 40, as_of: null },
-    { medicine: 'Metformin', status: 'out_of_stock', qty: 0, as_of: null },
+    {
+      medicine: 'Metformin',
+      status: 'out_of_stock',
+      qty: 0,
+      as_of: null,
+      alternatives: [
+        {
+          medicine: 'Glyciphage',
+          kind: 'same_composition',
+          available: 12,
+          clinic: null,
+        },
+        {
+          medicine: 'Metformin',
+          kind: 'other_clinic',
+          available: 30,
+          clinic: 'Aundh Clinic',
+        },
+      ],
+    },
   ],
   rejected_medicines: ['Rosuvastatin'],
   drafting_unavailable: false,
@@ -80,9 +99,21 @@ test('doctor picks a consultation, reviews stock-flagged draft, edits and signs'
   );
   await user.click(generate);
 
-  expect(await screen.findByText('In stock · 40')).toBeInTheDocument();
+  expect(
+    await screen.findByText('In stock · 40 available'),
+  ).toBeInTheDocument();
   expect(screen.getByText('Out of stock')).toBeInTheDocument();
   expect(screen.getByText(/Rosuvastatin/)).toBeInTheDocument();
+  // Out of stock: alternatives are listed; the doctor chooses, nothing is swapped automatically.
+  expect(screen.getByText('Aundh Clinic')).toBeInTheDocument();
+  expect(screen.getAllByRole('button', { name: 'Use instead' })).toHaveLength(
+    1,
+  );
+  await user.click(screen.getByRole('button', { name: 'Use instead' }));
+  expect(
+    (screen.getByLabelText('Medicines (comma separated)') as HTMLInputElement)
+      .value,
+  ).toContain('Glyciphage');
 
   const plan = screen.getByLabelText('plan');
   await user.clear(plan);
@@ -97,4 +128,5 @@ test('doctor picks a consultation, reviews stock-flagged draft, edits and signs'
   expect(resumed[0].soap?.plan).toBe(
     'Atorvastatin 10 mg at night; review in 2 weeks.',
   );
+  expect(resumed[0].soap?.medicines).toEqual(['Atorvastatin', 'Glyciphage']);
 });
