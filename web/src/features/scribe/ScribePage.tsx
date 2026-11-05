@@ -5,7 +5,6 @@ import {
   CalendarDays,
   FilePenLine,
   HeartPulse,
-  Mic,
   NotebookPen,
   PenLine,
   RotateCcw,
@@ -15,6 +14,7 @@ import {
 } from 'lucide-react';
 import { api } from '../../api/client';
 import { useAuth } from '../../auth/AuthProvider';
+import { DictationPanel } from './DictationPanel';
 import {
   Badge,
   Button,
@@ -91,6 +91,16 @@ export function ScribePage() {
   const [consultation, setConsultation] = useState<Consultation | null>(null);
   const [encounterId, setEncounterId] = useState<string | null>(null);
   const [transcript, setTranscript] = useState('');
+  const { data: speech } = useQuery({
+    queryKey: ['speech', auth.role],
+    queryFn: () =>
+      api<{ provider: string; audio_leaves_boundary: boolean }>(
+        '/api/scribe/speech',
+        {},
+        auth,
+      ),
+    retry: false,
+  });
   const [session, setSession] = useState<Session | null>(null);
   const [soap, setSoap] = useState<Soap | null>(null);
   const [comments, setComments] = useState('');
@@ -283,20 +293,29 @@ export function ScribePage() {
             <span className="ml-auto text-[11px] text-muted">Step 2</span>
           </div>
           <div className="p-6">
-            <label className="flex cursor-pointer items-center gap-4 rounded-xl border border-dashed border-brand-200 bg-brand-50/40 p-4 focus-within:ring-2 focus-within:ring-brand-600 hover:bg-brand-50">
-              <span className="flex size-10 shrink-0 items-center justify-center rounded-full bg-white text-brand-600">
-                <Mic size={20} />
-              </span>
-              <span>
-                <span className="block text-xs font-semibold">
-                  {busy === 'audio'
-                    ? 'Transcribing locally…'
-                    : 'Add consultation audio'}
-                </span>
-                <span className="mt-1 block text-[11px] text-muted">
-                  PCM WAV · up to 16 MB / 30 min
-                </span>
-              </span>
+            <DictationPanel
+              auth={auth}
+              disabled={!!busy}
+              onStart={() => {
+                setError('');
+                reset();
+              }}
+              onText={(text) =>
+                setTranscript((current) =>
+                  current.trim() ? `${current.trimEnd()} ${text}` : text,
+                )
+              }
+              onError={setError}
+            />
+            <label className="mt-3 inline-flex cursor-pointer items-center gap-2 text-[12px] text-muted hover:text-ink focus-within:underline">
+              <AudioLines
+                size={14}
+                className="text-brand-600"
+                aria-hidden="true"
+              />
+              {busy === 'audio'
+                ? 'Transcribing the recording…'
+                : 'Or upload a recording (WAV, up to 16 MB)'}
               <input
                 type="file"
                 className="sr-only"
@@ -305,11 +324,8 @@ export function ScribePage() {
                 onChange={(event) => {
                   const file = event.target.files?.[0];
                   if (file) void transcribe(file);
+                  event.target.value = '';
                 }}
-              />
-              <AudioLines
-                size={20}
-                className="ml-auto shrink-0 text-brand-600"
               />
             </label>
             <label htmlFor="transcript" className="field-label mt-5">
@@ -541,9 +557,11 @@ export function ScribePage() {
       </div>
       <div className="mt-6">
         <PrivacyNote>
-          Audio is processed locally and never saved. Nothing is written to the
-          record until you sign, and medicines must be named in the
-          consultation.
+          {speech?.audio_leaves_boundary
+            ? 'Audio is transcribed by the hosted AI provider and never saved by MedPal.'
+            : 'Audio is transcribed on MedPal’s own servers and never saved.'}{' '}
+          Nothing is written to the record until you sign, and medicines must be
+          named in the consultation.
         </PrivacyNote>
       </div>
     </section>
