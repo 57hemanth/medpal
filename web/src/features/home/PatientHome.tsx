@@ -1,3 +1,4 @@
+import { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import {
   ArrowRight,
@@ -12,6 +13,7 @@ import { Link } from 'react-router-dom';
 import { api } from '../../api/client';
 import type { Appointment, Consent, HealthRecord } from '../../api/types';
 import { useAuth } from '../../auth/AuthProvider';
+import { RecordViewer } from '../records/RecordViewer';
 import {
   Card,
   EmptyState,
@@ -78,6 +80,9 @@ function QuickAction({
 export function PatientHome() {
   const { auth } = useAuth();
   const caregiver = auth.role === 'caregiver';
+  const [viewing, setViewing] = useState<{ id: string; title: string } | null>(
+    null,
+  );
   const appointments = useQuery({
     queryKey: ['appointments', 'upcoming', auth.user_id, auth.role],
     queryFn: () =>
@@ -231,7 +236,7 @@ export function PatientHome() {
                       <FileText size={15} aria-hidden="true" />
                     </span>
                     <span className="min-w-0 flex-1">
-                      <span className="block truncate text-[13px] font-medium capitalize">
+                      <span className="block truncate text-[13px] font-medium">
                         {describeDocType(record.type)}
                       </span>
                       <span className="text-[12px] text-muted">
@@ -239,6 +244,17 @@ export function PatientHome() {
                       </span>
                     </span>
                     <StatusPill status={record.status ?? 'ready'} />
+                    <button
+                      className="btn btn-secondary min-h-8 px-3 text-[12px]"
+                      onClick={() =>
+                        setViewing({
+                          id: record.doc_id,
+                          title: `${describeDocType(record.type)} · ${formatDate(record.uploaded_at)}`,
+                        })
+                      }
+                    >
+                      View
+                    </button>
                   </li>
                 ))}
               </ul>
@@ -299,6 +315,13 @@ export function PatientHome() {
           </div>
         </Card>
       </div>
+      {viewing && (
+        <RecordViewer
+          docId={viewing.id}
+          title={viewing.title}
+          onClose={() => setViewing(null)}
+        />
+      )}
     </>
   );
 }

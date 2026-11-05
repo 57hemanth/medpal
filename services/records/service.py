@@ -40,6 +40,7 @@ async def upload_record(
     filename: str,
     content: bytes,
     content_type: str,
+    doc_type: str = "other",  # lab_report, radiology, prescription, discharge or other
 ) -> UploadedRecord:
     if auth["acting_for_patient_id"] != patient_id:
         raise PermissionError("cannot upload for a different patient")
@@ -50,9 +51,9 @@ async def upload_record(
     async with scoped(pool, auth) as conn:
         await conn.execute(
             "INSERT INTO document (patient_id, type, uri, sha256, uploaded_by)"
-            " VALUES (%s, 'other', %s, %s, %s)"
+            " VALUES (%s, %s, %s, %s, %s)"
             " ON CONFLICT (patient_id, sha256) DO NOTHING",
-            (patient_id, uri, digest, auth["user_id"]),
+            (patient_id, doc_type, uri, digest, auth["user_id"]),
         )
         doc = await _one(
             await conn.execute(
@@ -101,3 +102,43 @@ async def list_records(pool: AsyncConnectionPool, auth: AuthContext) -> list[dic
             )
         ).fetchall()
     return cast(list[dict[str, Any]], rows)
+
+
+@dataclass(frozen=True)
+class RecordFile:
+    content: bytes
+    media_type: str
+    filename: str
+
+
+async def open_record(
+    pool: AsyncConnectionPool, store: ObjectStore, auth: AuthContext, *, doc_id: str
+) -> RecordFile:
+    """The original document, for someone row-level security lets read it. Every view is audited.
+
+    Raises LookupError when the record doesn't exist or isn't visible to the caller: the two look the
+    same from outside, so an id can't be probed.
+    """
+    async with scoped(pool, auth) as conn:
+        cur = await conn.execute(
+            "SELECT uri, patient_id::text, type FROM document WHERE doc_id = %s", (doc_id,)
+        )
+        row = cast(dict[str, Any] | None, await cur.fetchone())
+        if row is None:
+            raise LookupError("record not found")
+        await audit.write(
+            conn,
+            auth,
+            action="read",
+            resource="document",
+            record_id=doc_id,
+            patient_id=row["patient_id"],
+            purpose="record view",
+        )
+    content = await store.get(row["uri"])
+    is_pdf = content.startswith(b"%PDF")
+    return RecordFile(
+        content=content,
+        media_type="application/pdf" if is_pdf else "text/plain; charset=utf-8",
+        filename=f"{row['type']}-{doc_id[:8]}.{'pdf' if is_pdf else 'txt'}",
+    )

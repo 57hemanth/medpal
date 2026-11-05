@@ -62,3 +62,15 @@ export async function api<T>(
   if (!response.ok) throw new Error(await response.text());
   return response.json() as Promise<T>;
 }
+
+/** A file the API serves (e.g. an uploaded record), fetched with the same identity headers as api(). */
+export async function apiFile(path: string, auth: AuthContext): Promise<Blob> {
+  const headers = new Headers();
+  headers.set('X-Dev-User-Id', auth.user_id);
+  headers.set('X-Dev-Role', auth.role);
+  if (auth.acting_for_patient_id)
+    headers.set('X-Dev-Patient-Id', auth.acting_for_patient_id);
+  const response = await fetch(path, { headers });
+  if (!response.ok) throw new Error(await response.text());
+  return response.blob();
+}

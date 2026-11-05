@@ -73,3 +73,52 @@ async def test_lay_and_hinglish_questions_reach_the_right_page(pool, world, tmp_
     ]:
         top = await retrieve(pool, auth, question=question, patient_id=world["patient"], limit=1)
         assert [c.page for c in top] == [page], question
+
+
+async def test_a_record_opens_for_its_owner_audited_and_is_invisible_to_others(
+    pool, world, admin_url, tmp_path
+):
+    import uuid
+
+    import httpx
+    import psycopg
+
+    from services.api.main import create_app
+
+    other_user, other_patient = str(uuid.uuid4()), str(uuid.uuid4())
+    with psycopg.connect(admin_url) as conn, conn.transaction():
+        conn.execute("INSERT INTO patient (patient_id, name) VALUES (%s, 'Someone Else')", (other_patient,))
+        conn.execute(
+            "INSERT INTO app_user (user_id, role, patient_id) VALUES (%s, 'patient', %s)",
+            (other_user, other_patient),
+        )
+    owner = {"X-Dev-User-Id": world["user"], "X-Dev-Role": "patient", "X-Dev-Patient-Id": world["patient"]}
+    other = {"X-Dev-User-Id": other_user, "X-Dev-Role": "patient", "X-Dev-Patient-Id": other_patient}
+    app = create_app()
+    async with (
+        app.router.lifespan_context(app),
+        httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://t") as client,
+    ):
+        pdf = pdf_bytes(["LDL 162 mg/dL", "HbA1c 6.8 percent"])
+        up = await client.post(
+            "/api/records",
+            headers=owner,
+            data={"patient_id": world["patient"]},
+            files={"file": ("labs.pdf", pdf, "application/pdf")},
+        )
+        doc = up.json()["doc_id"]
+        mine = await client.get(f"/api/records/{doc}/file", headers=owner)
+        theirs = await client.get(f"/api/records/{doc}/file", headers=other)
+        missing = await client.get(f"/api/records/{uuid.uuid4()}/file", headers=owner)
+        malformed = await client.get("/api/records/not-a-uuid/file", headers=owner)
+    assert mine.status_code == 200 and mine.content == pdf
+    assert mine.headers["content-type"] == "application/pdf"
+    assert mine.headers["cache-control"] == "no-store"
+    # Someone else's record and a record that doesn't exist look the same: an id can't be probed.
+    assert theirs.status_code == missing.status_code == malformed.status_code == 404
+    assert theirs.json() == missing.json()
+    with psycopg.connect(admin_url) as conn:
+        views = conn.execute(
+            "SELECT actor_id::text FROM audit_event WHERE record_id = %s AND purpose = 'record view'", (doc,)
+        ).fetchall()
+    assert views == [(world["user"],)]

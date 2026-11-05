@@ -429,8 +429,8 @@ export function describeReason(reason: string) {
 const DOC_TYPES: Record<string, string> = {
   lab_report: 'Lab report',
   prescription: 'Prescription',
-  discharge_summary: 'Discharge summary',
-  imaging: 'Imaging report',
+  discharge: 'Discharge summary',
+  radiology: 'Imaging report',
   other: 'Document',
 };
 

@@ -3,7 +3,7 @@
 import uuid
 from typing import Annotated, Any
 
-from fastapi import APIRouter, Depends, File, Form, HTTPException, Request, UploadFile, status
+from fastapi import APIRouter, Depends, File, Form, HTTPException, Request, Response, UploadFile, status
 from pydantic import BaseModel
 
 from services.api.deps import auth_ctx
@@ -13,7 +13,7 @@ from services.platform.config import get_settings
 from services.records.ingest import MAX_UPLOAD_BYTES, UploadRejected
 from services.records.ingest_graph import job_id
 from services.records.qa import answer_question
-from services.records.service import ingest_record, list_records, upload_record
+from services.records.service import ingest_record, list_records, open_record, upload_record
 
 router = APIRouter(prefix="/api/records", tags=["records"])
 
@@ -98,6 +98,27 @@ async def upload(
 @router.get("", response_model=list[RecordOut])
 async def records(request: Request, auth: Auth) -> list[RecordOut]:
     return [RecordOut(**row) for row in await list_records(request.app.state.app_pool, auth)]
+
+
+@router.get("/{doc_id}/file")
+async def record_file(doc_id: str, request: Request, auth: Auth) -> Response:
+    """The original document, inline. Visible only where row-level security allows; every view is audited."""
+    try:
+        uuid.UUID(doc_id)
+        record = await open_record(
+            request.app.state.app_pool, request.app.state.object_store, auth, doc_id=doc_id
+        )
+    except (ValueError, LookupError) as exc:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "record not found") from exc
+    return Response(
+        content=record.content,
+        media_type=record.media_type,
+        headers={
+            "Content-Disposition": f'inline; filename="{record.filename}"',
+            "Cache-Control": "no-store",  # health records never sit in a shared or browser cache
+            "X-Content-Type-Options": "nosniff",
+        },
+    )
 
 
 @router.post("/questions", response_model=AnswerOut)

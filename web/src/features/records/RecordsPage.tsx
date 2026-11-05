@@ -12,6 +12,7 @@ import {
 } from 'lucide-react';
 import { api } from '../../api/client';
 import { useAuth } from '../../auth/AuthProvider';
+import { RecordViewer } from './RecordViewer';
 import {
   Badge,
   Button,
@@ -58,6 +59,9 @@ export function RecordsPage() {
   const [uploading, setUploading] = useState(false);
   const [file, setFile] = useState<File | null>(null);
   const [uploadSuccess, setUploadSuccess] = useState(false);
+  const [viewing, setViewing] = useState<{ id: string; title: string } | null>(
+    null,
+  );
   const logRef = useRef<HTMLDivElement>(null);
   const fileRef = useRef<HTMLInputElement>(null);
   const {
@@ -235,8 +239,19 @@ export function RecordsPage() {
                         <p className="mt-1 text-[11px] text-muted">
                           {formatDate(record.uploaded_at)}
                         </p>
-                        <div className="mt-2">
+                        <div className="mt-2 flex items-center gap-2">
                           <StatusPill status={record.status ?? 'queued'} />
+                          <button
+                            className="text-[12px] font-semibold text-brand-700 hover:text-brand-900"
+                            onClick={() =>
+                              setViewing({
+                                id: record.doc_id,
+                                title: `${describeDocType(record.type)} · ${formatDate(record.uploaded_at)}`,
+                              })
+                            }
+                          >
+                            View
+                          </button>
                         </div>
                       </div>
                     </div>
@@ -416,6 +431,13 @@ export function RecordsPage() {
           </div>
         </div>
       </div>
+      {viewing && (
+        <RecordViewer
+          docId={viewing.id}
+          title={viewing.title}
+          onClose={() => setViewing(null)}
+        />
+      )}
     </section>
   );
 }
