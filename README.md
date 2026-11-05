@@ -49,9 +49,9 @@ MedPal automates the routine parts and keeps humans in charge of every decision 
 | Append-only audit, immutable signed notes | ✅ |
 | Web app: role-based dashboards for patients, caregivers, doctors, front desk and compliance; audit log and operations views | ✅ |
 | Verified against a real model (Gemini): answers, refusals, routing, drafts, fallback, cost | ✅ `make live-check` |
-| Local speech-to-text | 🟡 adapter and upload UI; local model provisioning required |
+| Consultation dictation: speak and the transcript fills in (local Whisper; Gemini by opt-in) | ✅ `make speech-model` once |
 
-**Tests:** 281 unit · 64 data · 83 integration (real Postgres) · 15 frontend · 40 real-model checks · evaluation gates · lint, type checks and module-boundary contracts. See [implementation status](docs/implementation-status.md) for what has been verified against a live stack.
+**Tests:** 288 unit · 64 data · 85 integration (real Postgres) · 20 frontend · 40 real-model checks · evaluation gates · lint, type checks and module-boundary contracts. See [implementation status](docs/implementation-status.md) for what has been verified against a live stack.
 
 ## Quick start
 

@@ -178,6 +178,12 @@ Every suite above runs on a local fake model. These came from running the produc
 - *Test:* `test_a_code_works_once_and_wrong_codes_are_capped`.
 - *Lesson:* a counter that exists to survive failure must be committed before the failure is raised. Test limits against the real database, not a mock.
 
+**35. A feature whose tests passed and which had never worked.**
+- *What happened:* consultation audio upload had unit tests, all green, and "local model provisioning required" in the status table. The first time a real model was installed, every transcription failed: faster-whisper's audio decoder called PyAV with an argument the installed version doesn't take. The tests mocked the model, so nothing ever ran the decoding path.
+- *Fix:* WAV is decoded by our own small function (PCM to 16 kHz mono float32) and handed to the model as samples; the media decoder is never used.
+- *Test:* `test_stereo_48k_becomes_mono_16k_with_levels_kept`, plus an end-to-end browser dictation against the real model.
+- *Lesson:* "needs provisioning" is not a status, it's an untested feature. Provision it once and run it before calling it done.
+
 ## Design choices worth copying
 
 - **Domain names in code** (`triage`, `records`, `scribe`), not internal codes: opaque names make every new reader look something up.

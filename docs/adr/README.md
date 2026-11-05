@@ -19,5 +19,6 @@ Each ADR records one decision: the constraint that forced it, the options weighe
 | [0013](0013-model-step-in-triage.md) | One bounded, prefetched model step in triage: red flags may only be added; specialty only when the rules are unsure |
 | [0014](0014-mobile-sign-in.md) | Mobile number and one-time code as the sign-in for every role; share with a family member's number |
 | [0015](0015-appointment-emails-outbox.md) | Appointment emails through an outbox written by a trigger; only confirmed addresses; nothing clinical |
+| [0016](0016-consultation-dictation.md) | Consultation dictation: local Whisper by default; Gemini only with an explicit audio-egress opt-in |
 
 Format: **Status · Context · Options · Decision · Revisit trigger · Consequences (easier / harder) · Proof · Checked on**.
