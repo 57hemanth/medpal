@@ -5,12 +5,12 @@ This guide walks through the system from a request coming in to a row being writ
 ## 1. The big picture
 
 ```
- Patient app / Front desk / Doctor console           (UI: planned)
+ Patient app / Front desk / Doctor console           (React SPA)
                     │
                     ▼
  ┌──────────────── FastAPI (services/api) ─────────────────────────────────┐
  │  auth dependency → AuthContext {user_id, role, acting_for_patient_id}   │
- │  routers: /triage  (records, scribe, consent: planned)                  │
+ │  routers: /triage, /api/{records,scribe,consents,...}                  │
  └───────────────┬──────────────────────────────────────────────────────────┘
                  ▼
  ┌──────── LangGraph graphs (services/agent) ───────┐   ┌── platform (services/platform) ──┐
@@ -34,10 +34,10 @@ It's one deployable service with strict module boundaries ([ADR-0001](adr/0001-m
 
 `POST /triage {"text": "knee pain for a week"}` with the caller's identity.
 
-1. **Identity.** `services/api/deps.py` builds an `AuthContext`. In development it trusts `X-Dev-*` headers, a mode that refuses to start when `MEDPAL_ENV=prod`; OIDC login is planned. From here on, **who** the caller is comes only from this context, never from request text or model output. That closes the "book for patient 123" prompt-injection route.
+1. **Identity.** `services/api/deps.py` builds an `AuthContext`. In development it trusts `X-Dev-*` headers, a mode that refuses to start when `MEDPAL_ENV=prod`; OIDC bearer verification is implemented; browser login intentionally uses selectable synthetic test identities. From here on, **who** the caller is comes only from this context, never from request text or model output. That closes the "book for patient 123" prompt-injection route.
 2. **A new run.** The router creates a `thread_id` and invokes the compiled graph with `{auth, intake_text}`. The API keeps no state; everything lives in the LangGraph checkpointer in Postgres ([ADR-0002](adr/0002-orchestration-langgraph.md)).
-3. **Red-flag gate, before anything else.** `red_flag_rules` checks the text for emergency presentations, in English and Hinglish ("seene mein dard" = chest pain). On a match the run goes to `emergency_handoff`: it opens a ticket in the emergency queue, replies with fixed guidance (call 112), and ends. **No diagnosis, no AI, and it works even if every model is down.** *The current rule list is a deliberately over-inclusive placeholder; a versioned, clinician-signed rule engine is planned.*
-4. **Specialty.** `match_specialty` picks one of 38 specialties. *Currently a stub that returns General Medicine; a small-model classifier with a confidence threshold (ask one clarifying question, then hand over to the front desk) is planned.*
+3. **Red-flag gate, before anything else.** `red_flag_rules` checks the text for emergency presentations, in English and Hinglish ("seene mein dard" = chest pain). On a match the run goes to `emergency_handoff`: it opens a ticket in the emergency queue, replies with fixed guidance (call 112), and ends. **No diagnosis, no AI, and it works even if every model is down.** *Rules carry a version and draft status; clinician approval and larger evaluation sets remain outstanding.*
+4. **Specialty.** `match_specialty` picks one of 38 specialties. *Currently a deterministic draft phrase matcher with confidence and clarification/handoff paths; a model classifier and larger evaluations remain planned.*
 5. **Shortlist** (plain SQL, no AI). `services/scheduling/service.py::shortlist` returns each doctor's earliest **free** slot, ranked by:
    - same city as the patient (a filter);
    - doctor speaks the patient's language;
@@ -96,11 +96,11 @@ model reply with tokens ──► reidentify (token map never leaves) ──► 
 - Names, phones, ABHA, PAN, MRN, a labelled date of birth and locations are **tokenised**; Aadhaar is **blocked**. Lab values, drug names and report dates are **kept**, because the model needs them.
 - Tested in both directions: no leaks, and no over-scrubbing of clinical text, including Hinglish.
 
-*The egress adapter that wires this in front of an LLM provider is planned. The de-identification layer and its tests are built.*
+The egress adapter is implemented for configured chat providers: workflows call `EgressChatClient`, which de-identifies before invocation. Local deterministic fake generation remains the development default.
 
 ## 5. Audit
 
-Every write that touches patient data (bookings, handoff tickets) writes an `audit_event` **in the same transaction**: actor, role, action, record, patient, purpose, trace id. The table is partitioned by month and append-only. "Who saw this record?" is a single query. *Read-audit on records Q&A arrives with that feature.*
+Every write that touches patient data (bookings, handoff tickets) writes an `audit_event` **in the same transaction**: actor, role, action, record, patient, purpose, trace id. The table is partitioned by month and append-only. "Who saw this record?" is a single query. Records Q&A writes read-audit events for cited chunks.
 
 ## 6. Data
 
@@ -118,13 +118,34 @@ Every write that touches patient data (bookings, handoff tickets) writes an `aud
 
 Integration tests rebuild a throwaway `medpal_test` database from migrations on every run. Fixtures are set up with the owner role; the code under test runs as the app role, so RLS is exercised for real.
 
-## 8. Planned
+## 8. Records and scribe adapters
 
-- **Records Q&A:**
-  - upload, then OCR fallback, de-identification, section chunking and self-hosted embeddings;
-  - hybrid retrieval scoped by RLS;
-  - answers with verified citations;
-  - diagnosis and dose questions handed to a doctor.
-- **Consultation scribe:** transcript → SOAP draft → medicines checked against the transcript and against stock → the doctor reviews and signs → an immutable version. Nothing is stored before the signature.
-- **Real red-flag rule engine and specialty classifier,** with evaluation sets written before the code.
-- **OIDC login (Keycloak), a consent API, self-hosted tracing (Langfuse), and a front-desk console** with booking overrides.
+Records upload validates the entire extracted text for blocked identifiers **before storage**.
+Text PDFs are extracted with pypdf; empty-text pages fall back to local Poppler/Tesseract OCR
+(English + Hindi). Extraction preserves page numbers in chunks and citations. Unreadable,
+encrypted, empty or oversized documents are rejected rather than saved unchecked. Ingestion
+runs inline today, with a persistent database job status; a separate durable ingest worker is pending.
+
+Local development uses private filesystem objects; the container mounts a named volume.
+Deployments can use an S3-compatible store with server-side encryption. Memory storage is
+available for tests; production requires S3. Object keys use patient id + content digest rather
+than original filenames. Identified storage must be provisioned inside the deployment boundary.
+
+The scribe accepts typed transcripts and optional PCM WAV uploads. With the `speech` extra and
+a pre-provisioned faster-whisper model directory, audio is transcribed locally, without runtime
+model downloads or persistent audio storage. The transcript returns for human review before a
+separate SOAP draft request. The API supports doctor signing; the UI currently displays the draft
+and does not yet expose editing/signing or encounter creation. Medicine evidence is checked
+against the transcript; stock-aware prescription workflows remain pending.
+
+See [implementation status](implementation-status.md) for the full distinction between API,
+UI, configuration and unfinished scope, and [adapter setup](adapters.md) for runtime instructions.
+
+## 9. Remaining work
+
+- Clinician-signed emergency rules, model specialty classification and expanded evaluations.
+- Production self-hosted multilingual embeddings (the current embedding adapter is deterministic).
+- Durable background ingest, self-hosted tracing, checkpoint retention and patient erasure workflows.
+- Stock-aware prescriptions, booking overrides and fixed-template SMS delivery.
+- Browser consent granting, encounter setup, SOAP editing/signing and compliance workflows.
+- Browser OIDC login is deferred by choice; the backend bearer verifier remains available.

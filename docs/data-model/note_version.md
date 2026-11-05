@@ -8,7 +8,7 @@
 | Freshness | on signature |
 | Sensitivity | **clinical** |
 | Row-level security | read: allowed patients + compliance; insert: the encounter's doctor only |
-| Source | scribe graph after doctor sign-off (planned) |
+| Source | scribe signing API after doctor sign-off |
 
 ## Checks (each is a test or a database constraint)
 

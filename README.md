@@ -39,9 +39,11 @@ MedPal automates the routine parts and keeps humans in charge of every decision 
 | Records Q&A with citations | ✅ working with local embeddings and verified citations |
 | Consultation scribe with doctor sign-off | ✅ working API path with immutable signed notes |
 | OIDC login, consent API, front-desk console, tracing | 🟡 OIDC shape, consent API and front-desk APIs working; tracing planned |
-| React app | 🟡 role-aware shell and feature pages working |
+| React app | 🟡 test-login page and feature pages working; full sign/edit and admin UI pending |
+| Record persistence, PDF extraction and local OCR | ✅ filesystem/S3 adapters; page-aware extraction and pre-storage validation |
+| Local speech-to-text | 🟡 adapter and upload UI implemented; local model provisioning required |
 
-**Tests:** 103 unit · 64 data · 34 integration (real Postgres) · 1 frontend · lint, type checks and module-boundary contracts.
+**Tests:** 112 unit · 64 data · 38 integration (real Postgres) · 1 frontend · lint, type checks and module-boundary contracts.
 
 ## Quick start
 
@@ -76,7 +78,7 @@ curl -s localhost:8000/triage "${H[@]}" -d '{"text": "seene mein dard hai"}'   #
 
 The dev identity above is **Asha Verma** (patient, Pune), who can also act as caregiver for her mother **Lata**. Other dev logins (front desk, doctor, compliance) are listed by `make seed`.
 
-> Dev authentication trusts `X-Dev-*` headers and refuses to start when `MEDPAL_ENV=prod`. OIDC login is planned.
+> Dev authentication trusts `X-Dev-*` headers and refuses to start when `MEDPAL_ENV=prod`. The login page offers synthetic test identities; browser OIDC login is intentionally deferred.
 
 ### Tests and checks
 
@@ -123,7 +125,9 @@ The API connects as `medpal_app`, which is **not** a superuser and has no `BYPAS
 
 ## Roadmap
 
+See [implementation status](docs/implementation-status.md) for a code-checked scope inventory and [adapter setup](docs/adapters.md) for persistent storage, OCR and speech configuration.
+
 1. Replace draft triage rules with clinician-signed rules and larger evaluation sets.
 2. Swap the deterministic local embedding adapter for a production self-hosted multilingual model.
-3. Add production object storage, OCR and speech-to-text adapters.
+3. Provision private S3 and a local speech model; move inline ingestion to a durable worker.
 4. Add stock-aware prescriptions, retention jobs and self-hosted tracing.

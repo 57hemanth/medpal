@@ -18,7 +18,7 @@ MedPal handles health data, so privacy is designed in, not added on. This page m
 | Scrubbing doesn't destroy clinical meaning | Over-scrub guards; dates and lab values kept; overlaps resolved by severity | `test_clinical_text_is_unchanged` | ✅ |
 | Embeddings don't become a hidden way out | In-boundary embedding adapter ([ADR-0007](adr/0007-exact-vector-search-per-patient.md)) | `test_local_embedding_shape_is_fixed_for_pgvector_schema` | 🟡 deterministic adapter; production model planned |
 | Traces and logs don't leak data | Self-hosted tracing; no request bodies in logs | — | ⏳ |
-| Consultation audio (a voice is identifying) stays in-boundary | Local speech-to-text | — | ⏳ |
+| Consultation audio (a voice is identifying) stays in-boundary | Local faster-whisper adapter; audio held in memory, never stored or sent to chat providers | `test_local_speech_uses_in_memory_audio`, `test_speech_rejects_invalid_audio_and_unconfigured_model` | 🟡 model provisioning and real audio evaluation external |
 
 ## 2. Identifiers with special restrictions
 
@@ -65,7 +65,7 @@ MedPal handles health data, so privacy is designed in, not added on. This page m
 
 | Obligation | Control | Status |
 |---|---|---|
-| Consultation audio deleted within 24 hours, and the deletion audited | Scheduled job plus object-store lifecycle rule | ⏳ |
+| Consultation audio is not retained | Current transcription uses in-memory audio only; no persisted audio to expire. Any future recording store needs an audited deletion job and lifecycle policy | ✅ current non-retention; recording retention workflow not built |
 | Checkpoints (they contain PHI) are not kept indefinitely | Retention job; state kept lean (~12.8 KB per triage run, measured) | ⏳ |
 | Erasure on request | Cascading delete of a patient's documents, with an audit event | ⏳ |
 
@@ -75,4 +75,4 @@ MedPal handles health data, so privacy is designed in, not added on. This page m
 |---|---|---|
 | No secrets in the repository | `.env` gitignored; only `.env.example` committed | ✅ |
 | AI coding assistants never see identified data | Development uses only the synthetic generated layer | ✅ |
-| Prompt injection can't cross patient scope | Scope enforced in SQL and RLS; injected-document tests | ⏳ with records Q&A |
+| Prompt injection can't cross patient scope | Retrieval scope enforced by SQL RLS and tested with real Postgres; dedicated adversarial document evaluations still pending | 🟡 |
