@@ -21,27 +21,37 @@ Reviewed against the code on 3 November 2026. **Verified** means a test in this 
 
 ## Validation
 
-Run on 3 November 2026 against a live local stack, with Gemini (`gemini-4-argon` for answers and drafts, `gemini-3.8-flash` for routing and as the fallback).
+Run on 3 November 2026 against a live local stack, with Gemini: `gemini-4-argon` for note drafts, `gemini-3.8-flash` for records answers, routing and as the fallback.
 
 | Check | Result |
 |---|---|
-| Unit tests | 226 passed |
+| Unit tests | 228 passed |
 | Data tests | 64 passed |
 | Web tests and production build | 8 passed; build clean |
 | Lint, format, mypy, module-boundary contracts | clean |
 | Evaluation gates (`make eval`) | red-flag recall 100%, over-triage 2%, specialty 100%; records doctor-review recall 100%, over-refusal 0%. Held-out sets reported, never tuned: red-flag rules 20% (the safety questions cover the rest), doctor-review rules 30% |
-| Integration tests (real Postgres) | 59 passed |
+| Integration tests (real Postgres) | 60 passed |
 | Live API check (smoke) | 62/62 on Gemini |
 | Real-model check (`make live-check`) | 40/40: records values and cited pages (including Hinglish), refusals, held-out advice questions 10/10 with rules + model flag and 0/10 plain questions refused, routing 5/5 by the model, emergency never reaches the model, scribe drafts invent no medicines, broken primary falls through to the fallback, every call priced |
 | Provider failure in the wild | `gemini-4-argon` returned 504 during the run; the fallback answered and the patient saw no error |
 | LLM judge | agrees with all 20 draft labels (κ 1.0); **not calibrated** until 20 labels are clinician-reviewed |
-| Load test, 1,400 req/h then 3× burst, real model | 0% errors. Triage, safety questions and booking p95 under 30 ms. **Assistant p95 10.6 s (target 10 s) and records answers p95 14.0 s (target 8 s) miss**: the tail is the large model's own latency under concurrency |
-| Cost from real traces | $0.0031 per consultation (formula in the cost report); real token counts including thinking, none estimated |
+| Load test, 1,400 req/h then 3× burst, real model | **All targets met**, 0% errors: records answers p95 3.6 s (target 8 s), assistant p95 5.8 s (target 10 s), triage, safety questions and booking p95 under 30 ms |
+| Cost from real traces | $0.0020 per consultation (formula in the cost report); every call priced, real token counts including thinking, none estimated |
 | Full application image | builds |
 | Deployment boundary | direct internet blocked; non-allowlisted host refused; allowlisted model API reachable |
 
-### Open: records latency with the large model
+### Decision: records answers on the faster model
 
-Options, to be decided with measurements: answer records questions with the faster model (lower cost, quality to be checked with `make live-check`); a hedged second request after a few seconds; or streaming the answer so the first words arrive sooner. The per-attempt deadline already caps the worst case.
+Measured on the same live check and the same load test, changing only `MEDPAL_RECORDS_MODEL_TIER`:
+
+| | `gemini-4-argon` (large) | `gemini-3.8-flash` (small) |
+|---|---|---|
+| `make live-check` | 40/40 | 40/40 |
+| Records answer, average (sequential) | 8.7 s | 2.0 s |
+| Records answer p95 under burst | 14.0 s (misses 8 s) | 3.6 s |
+| Assistant p95 under burst | 10.6 s (misses 10 s) | 5.8 s |
+| Cost per records answer | $0.00133 | $0.00035 |
+
+Same quality on every check, about 4× faster at the tail and about 4× cheaper, so records answers use the small tier. Note drafts stay on the large model: they are longer, less latency-sensitive (the doctor reviews them), and the scribe checks pass on it. Re-run both measurements before changing either choice.
 
 Runtime instructions: [adapter setup](adapters.md). Architecture: [request flow](architecture.md).

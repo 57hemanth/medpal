@@ -84,6 +84,7 @@ placeholder model keeps every flow working (it never invents clinical content). 
 | `MEDPAL_CHAT_MODEL` | Large tier: records answers, note drafts |
 | `MEDPAL_CHAT_SMALL_MODEL` | Small tier: assistant routing |
 | `MEDPAL_CHAT_SMALL_THINKING_LEVEL=low` | Reasoning effort for routing. Measured: same accuracy, half the latency. Leave the large tier on the default |
+| `MEDPAL_RECORDS_MODEL_TIER` | Which tier answers records questions (`large` by default). Measure both with `make live-check` and `make load-test` before choosing |
 | `MEDPAL_CHAT_FALLBACK_*` | A second provider tried when the first fails, times out or returns invalid output |
 | `MEDPAL_CHAT_TIMEOUT_SECONDS` (30), `MEDPAL_CHAT_MAX_RETRIES` (1) | Hard deadline per provider attempt; SDK retries kept low so the fallback chain decides |
 | `MEDPAL_MODEL_PRICES`, `MEDPAL_PRICE_LIST_DATE` | USD per million tokens and the date you read the price list. Unpriced models report cost as "unpriced", never a guess |

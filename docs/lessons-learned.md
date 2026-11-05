@@ -147,6 +147,16 @@ Every suite above runs on a local fake model. These came from running the produc
 - *Fix:* the page tells "you shared" from "shared with you" by the record's owner and offers revoke only on your own; the API returns names where RLS allows.
 - *Test:* `ConsentPage.test.tsx`. Found by taking screenshots of every role's pages, not by unit tests.
 
+**29. The biggest model isn't the right default for every step.**
+- *What happened:* records answers on the largest model missed the latency target under load (p95 14 s against 8 s). The same live check run on the faster model scored the same 40/40, at a p95 of 3.6 s and a quarter of the cost.
+- *Fix:* `MEDPAL_RECORDS_MODEL_TIER`, chosen by measurement: answers on the small tier, note drafts on the large one.
+- *Lesson:* pick a model per task, with a quality check and a load test side by side, not by size.
+
+**30. "Tracing on every run" had a hole.**
+- *What happened:* the quick-draft endpoint called the model outside any trace, so its cost never reached the cost sheet. Noticed only because the cost report refused to total a window with no scribe runs.
+- *Fix:* the endpoint runs inside a trace like every other model call.
+- *Test:* `test_quick_scribe_drafts_are_traced`.
+
 ## Design choices worth copying
 
 - **Domain names in code** (`triage`, `records`, `scribe`), not internal codes: opaque names make every new reader look something up.
