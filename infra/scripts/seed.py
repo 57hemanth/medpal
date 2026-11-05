@@ -7,6 +7,7 @@ Refuses to run when MEDPAL_ENV=prod. Runs as the owner role: seeding is an admin
     uv run --group data python -m infra.scripts.seed
 """
 
+import asyncio
 import sys
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
@@ -14,6 +15,7 @@ from pathlib import Path
 import psycopg
 
 from data.synthetic.generate import OUT_DIR, write_outputs
+from infra.scripts.sample_records import ASHA_ANNUAL_CHECK, LATA_BLOOD_AND_KIDNEY, load_sample_records
 from services.platform.config import get_settings
 
 # Load order follows foreign keys.
@@ -116,9 +118,20 @@ def main() -> None:
         # Stock arrives as a nightly feed: stamp it as this morning's, so freshness flags are meaningful.
         conn.execute("UPDATE medicine_stock SET as_of = date_trunc('day', now()) + interval '6 hours'")
         _identities(conn)
-    print("loaded:", ", ".join(f"{t}={n:,}" for t, n in counts.items()))
+    # Sample reports go through the real upload path (validation, privacy scan, storage, indexing).
+    reports = asyncio.run(
+        load_sample_records(
+            settings,
+            [
+                (ASHA_USER, ASHA_PATIENT, ASHA_ANNUAL_CHECK),
+                (MOTHER_USER, MOTHER_PATIENT, LATA_BLOOD_AND_KIDNEY),
+            ],
+        )
+    )
+    print("loaded:", ", ".join(f"{t}={n:,}" for t, n in counts.items()), f"sample reports={reports}")
     print("dev identities: Asha (patient + caregiver for her mother Lata), Rohan, desk, doctor, compliance")
     print("the doctor has three consultations (Rohan, Asha, Lata) ready for the scribe")
+    print("sample reports: Asha's annual health check (3 pages), Lata's blood count and kidney function")
     print(
         "try: curl -s localhost:8000/triage -H 'content-type: application/json' "
         f"-H 'X-Dev-User-Id: {ASHA_USER}' -H 'X-Dev-Role: patient' -H 'X-Dev-Patient-Id: {ASHA_PATIENT}' "
