@@ -399,9 +399,9 @@ export function TriagePage() {
   return (
     <section>
       <PageHeader
-        eyebrow="Your personal care space"
-        title="Hi Asha, how can I help?"
-        description="A clearer path to the right care, one conversation at a time."
+        eyebrow="Care"
+        title="Care assistant"
+        description="Describe how you feel, ask about a report, or both. Emergencies go straight to a person."
       />
       <div className="grid items-start gap-6 xl:grid-cols-[minmax(0,1fr)_290px]">
         <div className="panel min-w-0 overflow-hidden">

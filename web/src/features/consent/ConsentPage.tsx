@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { Clock3, LockKeyhole, ShieldCheck, Users } from 'lucide-react';
 import { api } from '../../api/client';
+import type { Consent } from '../../api/types';
 import { useAuth } from '../../auth/AuthProvider';
 import {
   Badge,
@@ -14,14 +15,6 @@ import {
   humanError,
 } from '../../components/ui';
 
-type Consent = {
-  consent_id: string;
-  grantee_user_id: string;
-  scope: string[];
-  purpose: string;
-  expires_at: string;
-  revoked_at: string | null;
-};
 export function ConsentPage() {
   const { auth } = useAuth();
   const [error, setError] = useState('');
@@ -37,6 +30,12 @@ export function ConsentPage() {
     queryFn: () => api<Consent[]>('/api/consents', {}, auth),
     retry: false,
   });
+  // A patient can revoke what they shared from their OWN record; consents someone else granted them
+  // (e.g. a parent sharing with Asha) are shown read-only, and only the granting patient can revoke them.
+  const mine = (consent: Consent) =>
+    auth.role === 'patient' &&
+    consent.patient_id === auth.acting_for_patient_id;
+  const ordered = [...data].sort((a, b) => Number(mine(b)) - Number(mine(a)));
   async function revoke(id: string) {
     setPending(id);
     setError('');
@@ -53,9 +52,9 @@ export function ConsentPage() {
   return (
     <section>
       <PageHeader
-        eyebrow="Your care circle"
-        title="Shared with care. Controlled by you."
-        description="See who has access, what’s shared, and when that access ends."
+        eyebrow="Privacy"
+        title="Sharing & consent"
+        description="Who can see which records, for what purpose, and until when. Revoking takes effect immediately."
       />
       <div className="mb-6">
         <ErrorNotice
@@ -86,7 +85,7 @@ export function ConsentPage() {
             />
           ) : (
             <div className="divide-y divide-line">
-              {data.map((consent) => {
+              {ordered.map((consent) => {
                 const expired = new Date(consent.expires_at) <= new Date();
                 const inactive = consent.revoked_at || expired;
                 return (
@@ -97,12 +96,18 @@ export function ConsentPage() {
                       </span>
                       <div className="min-w-0 flex-1">
                         <div className="flex flex-wrap items-center justify-between gap-2">
-                          <h3 className="text-sm font-semibold">
-                            {consent.grantee_user_id ===
-                            '00000000-0000-0000-0000-0000000e0001'
-                              ? 'Asha Verma'
-                              : 'Care circle member'}
-                          </h3>
+                          <div>
+                            <h3 className="text-sm font-semibold">
+                              {mine(consent)
+                                ? (consent.grantee_name ?? 'Care circle member')
+                                : (consent.patient_name ?? 'Another patient')}
+                            </h3>
+                            <p className="mt-0.5 text-[12px] text-muted">
+                              {mine(consent)
+                                ? 'Can see your records'
+                                : 'Shared their records with you'}
+                            </p>
+                          </div>
                           <Badge tone={inactive ? 'neutral' : 'green'}>
                             {consent.revoked_at
                               ? 'Revoked'
@@ -140,7 +145,7 @@ export function ConsentPage() {
                             Member reference: {consent.grantee_user_id}
                           </p>
                         </details>
-                        {auth.role === 'patient' && !inactive && (
+                        {mine(consent) && !inactive && (
                           <div className="mt-3">
                             {confirm === consent.consent_id ? (
                               <div className="rounded-xl border border-amber-200 bg-amber-50 p-4">

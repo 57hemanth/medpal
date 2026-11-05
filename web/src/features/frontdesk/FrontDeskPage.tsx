@@ -10,6 +10,7 @@ import {
   Siren,
 } from 'lucide-react';
 import { api } from '../../api/client';
+import type { Handoff } from '../../api/types';
 import { useAuth } from '../../auth/AuthProvider';
 import {
   Badge,
@@ -17,17 +18,13 @@ import {
   EmptyState,
   ErrorNotice,
   PageHeader,
+  StatusPill,
   formatDate,
+  describeReason,
+  timeAgo,
   humanError,
 } from '../../components/ui';
 
-type Handoff = {
-  ticket_id: string;
-  kind: string;
-  status: string;
-  reason: string;
-  created_at: string;
-};
 const filters = [
   { id: 'all', label: 'All requests' },
   { id: 'open', label: 'Open' },
@@ -69,16 +66,16 @@ export function FrontDeskPage() {
   const visible = data.filter(
     (handoff) =>
       (filter === 'all' || handoff.status === filter) &&
-      `${handoff.kind} ${handoff.reason} ${handoff.ticket_id}`
+      `${handoff.kind} ${describeReason(handoff.reason)} ${handoff.patient_name ?? ''} ${handoff.ticket_id}`
         .toLowerCase()
         .includes(search.toLowerCase()),
   );
   return (
     <section>
       <PageHeader
-        eyebrow="Clinic operations"
-        title="A human touch, right when it matters."
-        description="Pick up where the assistant leaves off. Review requests and keep patients moving toward care."
+        eyebrow="Operations"
+        title="Handoff queue"
+        description="Requests the assistant handed to a person: emergencies first, then unclear requests and records questions."
         action={
           <Button
             variant="secondary"
@@ -187,27 +184,20 @@ export function FrontDeskPage() {
                 <div className="min-w-0 flex-1">
                   <div className="flex flex-wrap items-center gap-2">
                     <h2 className="text-sm font-semibold">
-                      {handoff.kind === 'emergency'
-                        ? 'Urgent care handoff'
-                        : 'Care coordination request'}
+                      {handoff.patient_name ?? 'Unknown patient'}
+                      <span className="ml-2 font-normal text-muted">
+                        {handoff.kind === 'emergency'
+                          ? 'Urgent care handoff'
+                          : 'Care coordination request'}
+                      </span>
                     </h2>
-                    <Badge
-                      tone={
-                        handoff.status === 'closed'
-                          ? 'neutral'
-                          : handoff.kind === 'emergency'
-                            ? 'red'
-                            : 'amber'
-                      }
-                    >
-                      {handoff.status.replaceAll('_', ' ')}
-                    </Badge>
+                    <StatusPill status={handoff.status} />
                   </div>
                   <p className="mt-1.5 text-xs leading-relaxed text-muted">
-                    {handoff.reason.replaceAll('_', ' ').replaceAll(',', ' · ')}
+                    {describeReason(handoff.reason)}
                   </p>
                   <p className="mt-2 text-[11px] text-muted">
-                    {formatDate(handoff.created_at)} · Ref{' '}
+                    {timeAgo(handoff.created_at)} · Ref{' '}
                     {handoff.ticket_id.slice(0, 8)}
                   </p>
                 </div>

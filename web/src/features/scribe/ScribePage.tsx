@@ -197,9 +197,9 @@ export function ScribePage() {
   return (
     <section>
       <PageHeader
-        eyebrow="Your clinical copilot"
-        title="More listening. Less note-taking."
-        description="Turn a consultation into a structured SOAP draft, review it, and sign it. Nothing is saved until you sign."
+        eyebrow="Clinical"
+        title="Consultations"
+        description="Start a consultation, review the drafted SOAP note with stock-checked prescriptions, then sign. Nothing is saved to the record until you sign."
         action={<Badge tone="amber">Doctor sign-off required</Badge>}
       />
       <div className="mb-6">

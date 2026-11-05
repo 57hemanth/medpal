@@ -18,6 +18,8 @@ import {
   EmptyState,
   ErrorNotice,
   PageHeader,
+  StatusPill,
+  describeDocType,
   PrivacyNote,
   formatDate,
   humanError,
@@ -125,9 +127,9 @@ export function RecordsPage() {
   return (
     <section>
       <PageHeader
-        eyebrow="Your health library"
-        title="Your records, in plain words."
-        description="Keep your reports together. Ask a question, and find clarity in the source."
+        eyebrow="Care"
+        title="Health records"
+        description="Your reports in one place. Ask a question and every answer cites the page it came from."
         action={
           <Badge>
             <ShieldIcon />
@@ -224,17 +226,14 @@ export function RecordsPage() {
                       </span>
                       <div className="min-w-0">
                         <h3 className="text-xs font-semibold">
-                          Health record {records.length - index}
+                          {describeDocType(record.type)}{' '}
+                          {records.length - index}
                         </h3>
                         <p className="mt-1 text-[11px] text-muted">
                           {formatDate(record.uploaded_at)}
                         </p>
                         <div className="mt-2">
-                          <Badge
-                            tone={record.status === 'ready' ? 'green' : 'amber'}
-                          >
-                            {record.status?.replaceAll('_', ' ') ?? 'Pending'}
-                          </Badge>
+                          <StatusPill status={record.status ?? 'queued'} />
                         </div>
                       </div>
                     </div>

@@ -1,17 +1,11 @@
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import {
-  ArrowRight,
-  ArrowUpRight,
-  ChevronDown,
-  FileText,
-  HeartPulse,
-  LayoutList,
-  LogOut,
-  MessageCircle,
-  NotebookPen,
+  BookOpen,
+  Check,
+  ChevronsUpDown,
+  Menu,
   ShieldCheck,
-  Stethoscope,
-  Users,
+  X,
 } from 'lucide-react';
 import {
   NavLink,
@@ -22,303 +16,302 @@ import {
   useNavigate,
 } from 'react-router-dom';
 import { useSession } from '../auth/AuthProvider';
-import { Brand, Badge } from '../components/ui';
+import { Badge, Brand } from '../components/ui';
+import { AppointmentsPage } from '../features/appointments/AppointmentsPage';
+import { AuditPage } from '../features/compliance/AuditPage';
+import { OperationsPage } from '../features/compliance/OperationsPage';
 import { ConsentPage } from '../features/consent/ConsentPage';
 import { FrontDeskPage } from '../features/frontdesk/FrontDeskPage';
+import { DeskHome } from '../features/home/DeskHome';
+import { DoctorHome } from '../features/home/DoctorHome';
+import { PatientHome } from '../features/home/PatientHome';
 import { RecordsPage } from '../features/records/RecordsPage';
 import { ScribePage } from '../features/scribe/ScribePage';
 import { TriagePage } from '../features/triage/TriagePage';
 import type { Role } from '../api/client';
+import { navigation, profileFor, profiles } from './profiles';
 import '../styles/app.css';
 
-const logins = [
-  {
-    role: 'patient' as Role,
-    name: 'Asha Verma',
-    initials: 'AV',
-    description: 'Find care, book a visit, and understand your records',
-    icon: HeartPulse,
-  },
-  {
-    role: 'caregiver' as Role,
-    name: 'Asha, caring for Lata',
-    initials: 'AV',
-    description: 'Support your family with shared health records',
-    icon: Users,
-  },
-  {
-    role: 'doctor' as Role,
-    name: 'Test doctor',
-    initials: 'DR',
-    description: 'Turn consultation notes into a structured draft',
-    icon: Stethoscope,
-  },
-  {
-    role: 'desk' as Role,
-    name: 'Front desk',
-    initials: 'FD',
-    description: 'Keep your clinic’s handoff queue moving',
-    icon: LayoutList,
-  },
-  {
-    role: 'compliance' as Role,
-    name: 'Compliance reviewer',
-    initials: 'CR',
-    description: 'Explore the compliance role and record access',
-    icon: ShieldCheck,
-  },
-];
-const navigation = [
-  { to: '/', label: 'Care assistant', icon: MessageCircle, roles: ['patient'] },
-  {
-    to: '/records',
-    label: 'My records',
-    icon: FileText,
-    roles: ['patient', 'caregiver', 'doctor', 'compliance'],
-  },
-  {
-    to: '/consent',
-    label: 'Sharing & consent',
-    icon: ShieldCheck,
-    roles: ['patient', 'caregiver'],
-  },
-  {
-    to: '/scribe',
-    label: 'Consultation scribe',
-    icon: NotebookPen,
-    roles: ['doctor'],
-  },
-  { to: '/front-desk', label: 'Front desk', icon: LayoutList, roles: ['desk'] },
-];
-const homeFor = (role: Role) =>
-  role === 'doctor'
-    ? '/scribe'
-    : role === 'desk'
-      ? '/front-desk'
-      : role === 'patient'
-        ? '/'
-        : '/records';
-
-export function App() {
-  const { auth, setRole, logout } = useSession();
+function ProfileSwitcher({ onSwitch }: { onSwitch?: () => void }) {
+  const { auth, switchTo } = useSession();
   const navigate = useNavigate();
-  const { pathname } = useLocation();
-  const mainRef = useRef<HTMLElement>(null);
+  const [open, setOpen] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
+  const current = profileFor(auth.role);
   useEffect(() => {
-    if (auth) {
-      mainRef.current?.focus({ preventScroll: true });
-      window.scrollTo({ top: 0 });
-    }
-  }, [pathname, auth]);
-  if (!auth)
-    return (
-      <div className="min-h-dvh lg:grid lg:grid-cols-[0.9fr_1.1fr]">
-        <section className="relative overflow-hidden bg-brand-900 p-7 text-white sm:p-12 lg:flex lg:min-h-dvh lg:flex-col lg:justify-between lg:p-14">
-          <Brand light />
-          <div className="relative z-10 my-8 max-w-md sm:my-14 lg:my-20">
-            <span className="mb-7 inline-flex items-center gap-2 rounded-full border border-white/20 px-3 py-1.5 text-xs text-brand-100">
-              <span className="size-1.5 rounded-full bg-brand-200" />
-              Your care, connected
-            </span>
-            <h1 className="text-[34px] font-medium leading-[1.15] tracking-[-0.05em] sm:text-5xl lg:text-[58px]">
-              A little clarity.
-              <br />A lot more care.
-            </h1>
-            <p className="mt-7 max-w-sm text-base leading-relaxed text-brand-100">
-              Meet your everyday care assistant. Find the right doctor, make
-              sense of your records, and take your next step with confidence.
-            </p>
-            <div className="mt-9 flex items-center gap-3 text-sm text-brand-100">
-              <span className="flex size-9 items-center justify-center rounded-full border border-white/20">
-                <ShieldCheck size={17} />
+    if (!open) return;
+    const close = (event: MouseEvent | KeyboardEvent) => {
+      if (
+        event instanceof KeyboardEvent
+          ? event.key === 'Escape'
+          : !ref.current?.contains(event.target as Node)
+      )
+        setOpen(false);
+    };
+    document.addEventListener('mousedown', close);
+    document.addEventListener('keydown', close);
+    return () => {
+      document.removeEventListener('mousedown', close);
+      document.removeEventListener('keydown', close);
+    };
+  }, [open]);
+  const choose = (role: Role) => {
+    setOpen(false);
+    switchTo(role);
+    navigate('/');
+    onSwitch?.();
+  };
+  return (
+    <div ref={ref} className="relative">
+      <button
+        onClick={() => setOpen((value) => !value)}
+        aria-haspopup="menu"
+        aria-expanded={open}
+        className="flex w-full items-center gap-2.5 rounded-lg border border-line bg-white p-2 text-left hover:bg-canvas"
+      >
+        <span className="flex size-8 shrink-0 items-center justify-center rounded-md bg-brand-50 text-[11px] font-bold text-brand-800">
+          {current.initials}
+        </span>
+        <span className="min-w-0 flex-1">
+          <span className="block truncate text-[13px] font-semibold">
+            {current.name}
+          </span>
+          <span className="block truncate text-[11px] text-muted">
+            {current.title}
+          </span>
+        </span>
+        <ChevronsUpDown size={14} className="text-subtle" aria-hidden="true" />
+      </button>
+      {open && (
+        <div
+          role="menu"
+          aria-label="Switch profile"
+          className="absolute bottom-full left-0 z-40 mb-2 w-full min-w-60 rounded-xl border border-line bg-white p-1.5"
+          style={{ boxShadow: 'var(--shadow-pop)' }}
+        >
+          <p className="eyebrow px-2.5 pb-1.5 pt-1">Switch profile</p>
+          {profiles.map((profile) => (
+            <button
+              key={profile.role}
+              role="menuitemradio"
+              aria-checked={profile.role === auth.role}
+              onClick={() => choose(profile.role)}
+              className="flex w-full items-center gap-2.5 rounded-lg px-2.5 py-2 text-left hover:bg-canvas"
+            >
+              <profile.icon
+                size={15}
+                className="text-muted"
+                aria-hidden="true"
+              />
+              <span className="min-w-0 flex-1">
+                <span className="block truncate text-[13px] font-medium">
+                  {profile.name}
+                </span>
+                <span className="block truncate text-[11px] text-muted">
+                  {profile.title}
+                </span>
               </span>
-              Private by design. Human at heart.
-            </div>
-          </div>
-          <p className="relative z-10 hidden text-xs text-brand-200 lg:block">
-            Thoughtful assistance, with your care team in control.
-          </p>
-          <div
-            aria-hidden="true"
-            className="pointer-events-none absolute -bottom-52 -right-52 size-[540px] rounded-full border border-white/10"
-          >
-            <div className="absolute inset-14 rounded-full border border-white/10" />
-            <div className="absolute inset-28 rounded-full border border-white/10" />
-          </div>
-        </section>
-        <main className="mx-auto flex w-full max-w-xl flex-col justify-center px-6 py-10 sm:px-12 lg:py-14">
-          <div className="mb-7">
-            <Badge>Demo workspace</Badge>
-            <h2 className="mt-5 text-[30px] font-semibold tracking-[-0.04em]">
-              Choose a test login
-            </h2>
-            <p className="mt-2 text-sm leading-relaxed text-muted">
-              A real workflow, with synthetic data. Choose a perspective to
-              explore MedPal.
-            </p>
-          </div>
-          <div className="space-y-2.5">
-            {logins.map(({ role, name, description, icon: Icon }) => (
-              <button
-                key={role}
-                onClick={() => {
-                  setRole(role);
-                  navigate(homeFor(role));
-                }}
-                className="group flex min-h-22 w-full items-center gap-4 rounded-2xl border border-line bg-white p-4 text-left hover:border-brand-200 hover:bg-brand-50"
-              >
-                <span className="flex size-11 shrink-0 items-center justify-center rounded-xl bg-canvas text-brand-700">
-                  <Icon size={20} strokeWidth={1.7} aria-hidden="true" />
-                </span>
-                <span className="min-w-0 flex-1">
-                  <span className="block text-sm font-semibold">{name}</span>
-                  <span className="mt-1 block text-xs leading-relaxed text-muted">
-                    {description}
-                  </span>
-                </span>
-                <ArrowRight
-                  size={17}
-                  className="text-slate-400 group-hover:text-brand-700"
+              {profile.role === auth.role && (
+                <Check
+                  size={14}
+                  className="text-brand-700"
                   aria-hidden="true"
                 />
-              </button>
-            ))}
-          </div>
-          <p className="mt-6 text-center text-xs leading-relaxed text-muted">
-            No password needed. All people and clinic data are synthetic.
+              )}
+            </button>
+          ))}
+          <p className="border-t border-line px-2.5 pb-1 pt-2 text-[11px] leading-relaxed text-muted">
+            Profiles use synthetic data. Sign-in is added at deployment.
           </p>
-        </main>
-      </div>
-    );
+        </div>
+      )}
+    </div>
+  );
+}
 
-  const identity = logins.find((login) => login.role === auth.role)!;
-  const current = navigation.find((item) => item.to === pathname);
-  const allowed = navigation.filter((item) => item.roles.includes(auth.role));
-  const guard = (roles: string[], element: React.ReactNode) =>
-    roles.includes(auth.role) ? (
-      element
-    ) : (
-      <Navigate to={homeFor(auth.role)} replace />
-    );
+function Sidebar({ onNavigate }: { onNavigate?: () => void }) {
+  const { auth } = useSession();
   return (
-    <div className="min-h-dvh lg:pl-60">
+    <div className="flex h-full flex-col">
+      <div className="flex items-center justify-between px-4 pb-4 pt-5">
+        <Brand />
+      </div>
+      <div className="mx-3 mb-4 rounded-lg border border-line bg-canvas px-3 py-2">
+        <p className="text-[12px] font-semibold">MedPal Clinics</p>
+        <p className="text-[11px] text-muted">Pune · Hyderabad · 22 clinics</p>
+      </div>
+      <nav
+        aria-label="Main navigation"
+        className="flex-1 space-y-5 overflow-y-auto px-3"
+      >
+        {navigation[auth.role]?.map((group) => (
+          <div key={group.label}>
+            <p className="eyebrow mb-1.5 px-2.5">{group.label}</p>
+            <div className="space-y-0.5">
+              {group.items.map(({ to, label, icon: Icon }) => (
+                <NavLink
+                  key={to}
+                  to={to}
+                  end={to === '/'}
+                  onClick={onNavigate}
+                  className={({ isActive }) =>
+                    `nav-link ${isActive ? 'active' : ''}`
+                  }
+                >
+                  <Icon size={16} strokeWidth={1.8} aria-hidden="true" />
+                  {label}
+                </NavLink>
+              ))}
+            </div>
+          </div>
+        ))}
+      </nav>
+      <div className="space-y-3 p-3">
+        <div className="flex items-start gap-2 rounded-lg px-1 text-[11px] leading-relaxed text-muted">
+          <ShieldCheck
+            size={14}
+            className="mt-0.5 shrink-0 text-brand-600"
+            aria-hidden="true"
+          />
+          Identified data stays in the clinic&apos;s boundary. Every access is
+          audited.
+        </div>
+        <ProfileSwitcher onSwitch={onNavigate} />
+      </div>
+    </div>
+  );
+}
+
+function pageTitle(role: Role, pathname: string) {
+  for (const group of navigation[role] ?? [])
+    for (const item of group.items) if (item.to === pathname) return item.label;
+  return 'MedPal';
+}
+
+const HOME: Record<string, React.ReactNode> = {
+  patient: <PatientHome />,
+  caregiver: <PatientHome />,
+  doctor: <DoctorHome />,
+  desk: <DeskHome />,
+  compliance: <OperationsPage />,
+};
+
+const ROUTES: Record<string, Record<string, React.ReactNode>> = {
+  patient: {
+    '/care': <TriagePage />,
+    '/appointments': <AppointmentsPage />,
+    '/records': <RecordsPage />,
+    '/sharing': <ConsentPage />,
+  },
+  caregiver: { '/records': <RecordsPage />, '/sharing': <ConsentPage /> },
+  doctor: { '/consultations': <ScribePage />, '/records': <RecordsPage /> },
+  desk: { '/queue': <FrontDeskPage />, '/appointments': <AppointmentsPage /> },
+  compliance: { '/audit': <AuditPage />, '/records': <RecordsPage /> },
+};
+
+export function App() {
+  const { auth } = useSession();
+  const { pathname } = useLocation();
+  const mainRef = useRef<HTMLElement>(null);
+  const [drawer, setDrawer] = useState(false);
+  useEffect(() => {
+    mainRef.current?.focus({ preventScroll: true });
+    window.scrollTo({ top: 0 });
+    setDrawer(false);
+  }, [pathname, auth.role]);
+  const title = pageTitle(auth.role, pathname);
+  useEffect(() => {
+    document.title = `${title} · MedPal`;
+  }, [title]);
+
+  return (
+    <div className="min-h-dvh lg:pl-64">
       <a
         href="#main-content"
         className="sr-only fixed left-4 top-4 z-50 rounded-lg bg-brand-700 p-3 text-white focus:not-sr-only"
       >
         Skip to content
       </a>
-      <aside className="border-b border-line bg-white lg:fixed lg:inset-y-0 lg:left-0 lg:z-20 lg:flex lg:w-60 lg:flex-col lg:border-b-0 lg:border-r">
-        <div className="flex items-center justify-between px-5 py-5 lg:px-6 lg:pb-9 lg:pt-8">
-          <Brand />
-          <Badge>Test mode</Badge>
-        </div>
-        <p className="eyebrow hidden px-6 pb-3 lg:block">Your workspace</p>
-        <nav
-          aria-label="Main navigation"
-          className="flex gap-1 overflow-x-auto px-3 pb-3 lg:flex-col lg:px-4"
-        >
-          {allowed.map(({ to, label, icon: Icon }) => (
-            <NavLink
-              key={to}
-              to={to}
-              end
-              className={({ isActive }) =>
-                `flex min-h-11 shrink-0 items-center gap-3 rounded-xl px-3.5 py-3 text-[13px] font-medium ${isActive ? 'bg-brand-50 text-brand-800' : 'text-muted hover:bg-canvas hover:text-ink'}`
-              }
-            >
-              <Icon size={18} strokeWidth={1.7} aria-hidden="true" />
-              {label}
-            </NavLink>
-          ))}
-        </nav>
-        <div className="hidden flex-1 lg:block" />
-        <div className="mx-5 mb-5 hidden rounded-xl border border-line bg-canvas p-4 lg:block">
-          <ShieldCheck size={20} className="mb-3 text-brand-600" />
-          <p className="text-xs font-semibold">Your care. Your control.</p>
-          <p className="mt-1.5 text-xs leading-relaxed text-muted">
-            Your records are only shared with the people you allow.
-          </p>
-          {auth.role === 'patient' && (
-            <NavLink
-              to="/consent"
-              className="mt-3 inline-flex min-h-11 items-center gap-1 text-xs font-semibold text-brand-700"
-            >
-              Manage access
-              <ArrowUpRight size={13} />
-            </NavLink>
-          )}
-        </div>
-        <div className="hidden border-t border-line p-4 lg:block">
-          <button
-            onClick={logout}
-            className="flex min-h-11 w-full items-center gap-2 rounded-xl px-3 py-2 text-left text-xs text-muted hover:bg-canvas"
-          >
-            <LogOut size={15} />
-            Change test login
-          </button>
-        </div>
+      <aside className="hidden border-r border-line bg-white lg:fixed lg:inset-y-0 lg:left-0 lg:z-20 lg:block lg:w-64">
+        <Sidebar />
       </aside>
-      <header className="hidden min-h-[76px] sm:flex items-center justify-between gap-4 border-b border-line bg-white/80 px-5 sm:px-9">
-        <div className="flex items-center gap-2 text-xs text-muted">
-          <span className="hidden sm:inline">Workspace</span>
-          <span className="hidden text-slate-300 sm:inline">/</span>
-          <span className="font-medium text-ink">
-            {current?.label ?? 'MedPal'}
-          </span>
-        </div>
-        <button
-          onClick={logout}
-          aria-label="Change test login"
-          className="flex min-h-11 items-center gap-3 rounded-xl px-2 text-left hover:bg-brand-50"
+      {drawer && (
+        <div
+          className="fixed inset-0 z-40 lg:hidden"
+          role="dialog"
+          aria-modal="true"
+          aria-label="Menu"
         >
-          <span className="flex size-9 items-center justify-center rounded-full bg-[#ede8dd] text-xs font-semibold text-[#615843]">
-            {identity.initials}
+          <button
+            className="absolute inset-0 bg-ink/30"
+            aria-label="Close menu"
+            onClick={() => setDrawer(false)}
+          />
+          <aside
+            className="absolute inset-y-0 left-0 w-72 max-w-[85vw] bg-white"
+            style={{ boxShadow: 'var(--shadow-pop)' }}
+          >
+            <button
+              onClick={() => setDrawer(false)}
+              aria-label="Close menu"
+              className="btn btn-ghost absolute right-2 top-3 px-2"
+            >
+              <X size={18} />
+            </button>
+            <Sidebar onNavigate={() => setDrawer(false)} />
+          </aside>
+        </div>
+      )}
+      <header className="sticky top-0 z-10 flex min-h-14 items-center justify-between gap-3 border-b border-line bg-white/85 px-4 backdrop-blur sm:px-8">
+        <div className="flex min-w-0 items-center gap-2">
+          <button
+            onClick={() => setDrawer(true)}
+            aria-label="Open menu"
+            className="btn btn-ghost -ml-2 px-2 lg:hidden"
+          >
+            <Menu size={18} />
+          </button>
+          <span className="lg:hidden">
+            <Brand />
           </span>
-          <span className="hidden sm:block">
-            <span className="block text-xs font-semibold">{identity.name}</span>
-            <span className="mt-0.5 block text-[11px] capitalize text-muted">
-              {auth.role === 'desk' ? 'Clinic team' : auth.role}
-            </span>
-          </span>
-          <ChevronDown size={14} className="text-muted" />
-        </button>
+          <nav
+            aria-label="Breadcrumb"
+            className="hidden items-center gap-2 text-[13px] lg:flex"
+          >
+            <span className="text-muted">{profileFor(auth.role).title}</span>
+            <span className="text-line-strong">/</span>
+            <span className="font-medium">{title}</span>
+          </nav>
+        </div>
+        <div className="flex items-center gap-2">
+          <Badge tone="amber">Synthetic data</Badge>
+          <a
+            href="/docs"
+            target="_blank"
+            rel="noreferrer"
+            className="btn btn-ghost hidden px-2.5 sm:inline-flex"
+          >
+            <BookOpen size={15} aria-hidden="true" />
+            API
+          </a>
+        </div>
       </header>
       <main
         ref={mainRef}
         tabIndex={-1}
         id="main-content"
-        className="mx-auto w-full max-w-[1320px] px-5 py-8 outline-none sm:px-9 sm:py-10"
+        className="mx-auto w-full max-w-[1280px] px-4 py-6 outline-none sm:px-8 sm:py-8"
       >
         <Routes>
-          <Route path="/" element={guard(['patient'], <TriagePage />)} />
-          <Route
-            path="/records"
-            element={guard(
-              ['patient', 'caregiver', 'doctor', 'compliance'],
-              <RecordsPage />,
-            )}
-          />
-          <Route
-            path="/consent"
-            element={guard(['patient', 'caregiver'], <ConsentPage />)}
-          />
-          <Route path="/scribe" element={guard(['doctor'], <ScribePage />)} />
-          <Route
-            path="/front-desk"
-            element={guard(['desk'], <FrontDeskPage />)}
-          />
-          <Route
-            path="*"
-            element={<Navigate to={homeFor(auth.role)} replace />}
-          />
+          <Route path="/" element={HOME[auth.role]} />
+          {Object.entries(ROUTES[auth.role] ?? {}).map(([path, element]) => (
+            <Route key={path} path={path} element={element} />
+          ))}
+          <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
-        <footer className="mt-9 flex flex-wrap items-center justify-between gap-3 border-t border-line pt-5 text-[11px] text-muted">
-          <span>MedPal · Thoughtful care, one conversation at a time.</span>
-          <span className="flex items-center gap-1.5">
-            <span className="size-1.5 rounded-full bg-brand-500" />
-            Synthetic data workspace
-          </span>
+        <footer className="mt-10 flex flex-wrap items-center justify-between gap-3 border-t border-line pt-5 text-[11px] text-muted">
+          <span>© MedPal · Outpatient care platform</span>
+          <span>All people and clinics shown are synthetic.</span>
         </footer>
       </main>
     </div>
