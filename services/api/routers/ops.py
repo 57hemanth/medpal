@@ -1,5 +1,7 @@
 """Appointment and front-desk APIs."""
 
+import json
+from pathlib import Path
 from typing import Annotated, Any, Literal, cast
 
 from fastapi import APIRouter, Depends, HTTPException, Request
@@ -103,3 +105,27 @@ async def audit_log(
             },
         )
         return cast(list[dict[str, Any]], await cur.fetchall())
+
+
+RUNS = Path(__file__).resolve().parents[3] / "evals" / "runs"
+
+
+def _latest(pattern: str, exclude: str | None = None) -> tuple[str, dict[str, Any]] | None:
+    files = sorted(p for p in RUNS.glob(pattern) if not (exclude and p.name.startswith(exclude)))
+    if not files:
+        return None
+    return files[-1].name, json.loads(files[-1].read_text())
+
+
+@router.get("/ops/quality")
+async def quality(auth: Auth) -> dict[str, Any]:
+    """The latest evaluation run (rules, gated) and live check (real model), as written by `make eval` and
+    `make live-check`. Read from the run files; nothing here is recomputed or estimated."""
+    if auth["role"] != "compliance":
+        raise HTTPException(403, "quality results require the compliance role")
+    evaluation = _latest("2*.json")
+    live = _latest("live-*.json")
+    return {
+        "evaluation": {"file": evaluation[0], **evaluation[1]} if evaluation else None,
+        "live": {"file": live[0], **live[1]} if live else None,
+    }

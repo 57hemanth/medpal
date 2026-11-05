@@ -440,6 +440,27 @@ async def main() -> None:
     out = Path("evals/runs") / f"live-{datetime.now(UTC):%Y%m%dT%H%M%SZ}.md"
     out.parent.mkdir(exist_ok=True)
     out.write_text("\n".join(lines))
+    areas: dict[str, dict[str, int]] = {}
+    for r in results:
+        bucket = areas.setdefault(r.area, {"passed": 0, "total": 0})
+        bucket["passed"] += r.passed
+        bucket["total"] += 1
+    out.with_suffix(".json").write_text(
+        json.dumps(
+            {
+                "run_at": datetime.now(UTC).isoformat(),
+                "base": args.base,
+                "passed": passed,
+                "total": len(results),
+                "areas": areas,
+                "summary": summary,
+                "failures": [
+                    {"area": r.area, "case": r.case, "detail": r.detail} for r in results if not r.passed
+                ],
+            },
+            indent=2,
+        )
+    )
     for line in summary:
         print(line)
     print(f"\n{passed}/{len(results)} passed; written to {out}")
