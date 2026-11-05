@@ -9,16 +9,33 @@ from services.platform.auth import AuthContext
 from services.platform.db import scoped
 
 
-async def list_appointments(pool: AsyncConnectionPool, auth: AuthContext) -> list[dict[str, Any]]:
+async def list_appointments(
+    pool: AsyncConnectionPool,
+    auth: AuthContext,
+    *,
+    when: str = "all",
+    limit: int = 200,
+) -> list[dict[str, Any]]:
+    """Appointments the caller may see (row-level security decides which), newest first or soonest first.
+
+    when: "upcoming" (booked, from now, soonest first), "past" (before now, newest first) or "all".
+    """
     async with scoped(pool, auth) as conn:
         rows = await (
             await conn.execute(
-                "SELECT a.appt_id::text, a.patient_id::text, a.status, a.source,"
-                " s.starts_at, d.name AS doctor_name, c.name AS clinic_name"
+                "SELECT a.appt_id::text, a.patient_id::text, p.name AS patient_name, a.status, a.source,"
+                " s.starts_at, d.name AS doctor_name, sp.name AS specialty, c.name AS clinic_name, c.city"
                 " FROM appointment a JOIN slot s ON s.slot_id = a.slot_id"
                 " JOIN doctor d ON d.doctor_id = s.doctor_id"
+                " JOIN specialty sp ON sp.specialty_id = d.specialty_id"
                 " JOIN clinic c ON c.clinic_id = s.clinic_id"
-                " ORDER BY s.starts_at DESC"
+                " LEFT JOIN patient p ON p.patient_id = a.patient_id"  # the name only where RLS allows
+                " WHERE %(when)s = 'all'"
+                " OR (%(when)s = 'upcoming' AND a.status = 'booked' AND s.starts_at >= now())"
+                " OR (%(when)s = 'past' AND s.starts_at < now())"
+                " ORDER BY CASE WHEN %(when)s = 'upcoming' THEN s.starts_at END ASC, s.starts_at DESC"
+                " LIMIT %(limit)s",
+                {"when": when, "limit": max(1, min(limit, 500))},
             )
         ).fetchall()
     return cast(list[dict[str, Any]], rows)
@@ -52,8 +69,10 @@ async def list_handoffs(pool: AsyncConnectionPool, auth: AuthContext) -> list[di
     async with scoped(pool, auth) as conn:
         rows = await (
             await conn.execute(
-                "SELECT ticket_id::text, kind, status, patient_id::text, reason, thread_id, created_at"
-                " FROM handoff_ticket ORDER BY created_at DESC"
+                "SELECT t.ticket_id::text, t.kind, t.status, t.patient_id::text, p.name AS patient_name,"
+                " t.reason, t.thread_id, t.created_at"
+                " FROM handoff_ticket t LEFT JOIN patient p ON p.patient_id = t.patient_id"
+                " ORDER BY (t.status = 'closed'), (t.kind = 'emergency') DESC, t.created_at DESC LIMIT 300"
             )
         ).fetchall()
     return cast(list[dict[str, Any]], rows)

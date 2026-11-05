@@ -1,6 +1,6 @@
 """Appointment and front-desk APIs."""
 
-from typing import Annotated, Any, Literal
+from typing import Annotated, Any, Literal, cast
 
 from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel
@@ -26,8 +26,13 @@ class HandoffStatusIn(BaseModel):
 
 
 @router.get("/appointments")
-async def appointments(request: Request, auth: Auth) -> list[dict[str, Any]]:
-    return await list_appointments(request.app.state.app_pool, auth)
+async def appointments(
+    request: Request,
+    auth: Auth,
+    when: Literal["upcoming", "past", "all"] = "all",
+    limit: int = 200,
+) -> list[dict[str, Any]]:
+    return await list_appointments(request.app.state.app_pool, auth, when=when, limit=limit)
 
 
 @router.post("/appointments/{appt_id}/cancel")
@@ -66,3 +71,35 @@ async def metrics(request: Request, auth: Auth, hours: int = 24) -> dict[str, An
         raise HTTPException(403, "operational metrics require the compliance role")
     async with scoped(request.app.state.app_pool, auth) as conn:
         return await collect(conn, hours=max(1, min(hours, 24 * 30)))
+
+
+@router.get("/audit")
+async def audit_log(
+    request: Request,
+    auth: Auth,
+    resource: str | None = None,
+    action: str | None = None,
+    patient_id: str | None = None,
+    limit: int = 100,
+) -> list[dict[str, Any]]:
+    """Recent audit events for the compliance console: who did what, to which record, why, under which
+    trace. Row-level security already limits the table; this endpoint is compliance-only on top."""
+    if auth["role"] != "compliance":
+        raise HTTPException(403, "the audit log requires the compliance role")
+    async with scoped(request.app.state.app_pool, auth) as conn:
+        cur = await conn.execute(
+            "SELECT e.event_id, e.at, e.actor_id::text, e.actor_role, e.action, e.resource, e.record_id,"
+            " e.patient_id::text, p.name AS patient_name, e.purpose, e.trace_id"
+            " FROM audit_event e LEFT JOIN patient p ON p.patient_id = e.patient_id"
+            " WHERE (%(resource)s::text IS NULL OR e.resource = %(resource)s)"
+            " AND (%(action)s::text IS NULL OR e.action = %(action)s)"
+            " AND (%(patient)s::uuid IS NULL OR e.patient_id = %(patient)s::uuid)"
+            " ORDER BY e.at DESC LIMIT %(limit)s",
+            {
+                "resource": resource,
+                "action": action,
+                "patient": patient_id,
+                "limit": max(1, min(limit, 500)),
+            },
+        )
+        return cast(list[dict[str, Any]], await cur.fetchall())

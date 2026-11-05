@@ -20,15 +20,23 @@ class ConsentGrant:
     purpose: str
     expires_at: datetime
     revoked_at: datetime | None
+    # Display names, only where row-level security lets the caller see them.
+    patient_name: str | None = None
+    grantee_name: str | None = None
 
 
 async def list_consents(pool: AsyncConnectionPool, auth: AuthContext) -> list[ConsentGrant]:
     async with scoped(pool, auth) as conn:
         rows = await (
             await conn.execute(
-                "SELECT consent_id::text, patient_id::text, grantee_user_id::text,"
-                " scope, purpose, expires_at, revoked_at"
-                " FROM consent ORDER BY granted_at DESC"
+                "SELECT c.consent_id::text, c.patient_id::text, c.grantee_user_id::text,"
+                " c.scope, c.purpose, c.expires_at, c.revoked_at,"
+                " p.name AS patient_name, gp.name AS grantee_name"
+                " FROM consent c"
+                " LEFT JOIN patient p ON p.patient_id = c.patient_id"
+                " LEFT JOIN app_user gu ON gu.user_id = c.grantee_user_id"
+                " LEFT JOIN patient gp ON gp.patient_id = gu.patient_id"
+                " ORDER BY c.granted_at DESC"
             )
         ).fetchall()
     return [ConsentGrant(**cast(dict[str, Any], row)) for row in rows]

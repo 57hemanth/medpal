@@ -23,6 +23,8 @@ class ConsentOut(BaseModel):
     purpose: str
     expires_at: datetime
     revoked_at: datetime | None
+    patient_name: str | None = None
+    grantee_name: str | None = None
 
 
 class GrantConsentIn(BaseModel):
