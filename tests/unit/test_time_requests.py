@@ -27,6 +27,8 @@ WED = date(2026, 11, 4)  # a Wednesday
         ("is there a slot on 12 Nov", TimeRequest(None, date(2026, 11, 12), None)),
         ("Nov 3rd afternoon", TimeRequest(None, date(2027, 11, 3), "afternoon")),  # past date: next year
         ("other timings", TimeRequest(None, None, None)),
+        ("timings for seema", TimeRequest("d-seema", None, None)),
+        ("seema slots", TimeRequest("d-seema", None, None)),
         ("parso shaam", TimeRequest(None, date(2026, 11, 6), "evening")),
     ],
 )

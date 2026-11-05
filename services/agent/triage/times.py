@@ -104,7 +104,8 @@ def parse_time_request(text: str, doctors: list[dict[str, str]], today: date) ->
     day = _day(text, today)
     part = next((name for name, pattern in _PARTS if pattern.search(text)), None)
     # "Can I see Prasad instead?" asks for that doctor's times too.
-    if not asks_other_times(text) and not (doctor_id and _OTHER.search(text)):
+    # "timings for seema" names an offered doctor and asks about times: enough on its own.
+    if not asks_other_times(text) and not (doctor_id and (_OTHER.search(text) or _TIME_WORDS.search(text))):
         return None
     return TimeRequest(doctor_id=doctor_id, day=day, part_of_day=part)
 
