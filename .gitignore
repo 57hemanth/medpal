@@ -29,3 +29,5 @@ evals/runs/*.tmp
 .vscode/
 
 .medpal/
+evals/runs/*.json
+evals/runs/*.md

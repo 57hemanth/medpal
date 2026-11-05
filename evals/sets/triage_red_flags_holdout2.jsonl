@@ -1,0 +1,40 @@
+{"id": "h2-001", "text": "feels like an elephant on my chest", "expect_red_flag": true, "expect_rule": "redflag_chest_pain"}
+{"id": "h2-002", "text": "severe pain behind the breastbone", "expect_red_flag": true, "expect_rule": "redflag_chest_pain"}
+{"id": "h2-003", "text": "left arm and chest hurting badly", "expect_red_flag": true, "expect_rule": "redflag_chest_pain"}
+{"id": "h2-004", "text": "dil mein dard ho raha hai", "expect_red_flag": true, "expect_rule": "redflag_chest_pain"}
+{"id": "h2-005", "text": "he says his heart is racing and chest is squeezing", "expect_red_flag": true, "expect_rule": "redflag_chest_pain"}
+{"id": "h2-006", "text": "can't get enough air", "expect_red_flag": true, "expect_rule": "redflag_breathing"}
+{"id": "h2-007", "text": "wheezing so bad she can't talk", "expect_red_flag": true, "expect_rule": "redflag_breathing"}
+{"id": "h2-008", "text": "breathing has become very difficult", "expect_red_flag": true, "expect_rule": "redflag_breathing"}
+{"id": "h2-009", "text": "baby is grunting and ribs pulling in while breathing", "expect_red_flag": true, "expect_rule": "redflag_breathing"}
+{"id": "h2-010", "text": "swollen throat after peanut, can't swallow", "expect_red_flag": true, "expect_rule": "redflag_breathing"}
+{"id": "h2-011", "text": "fell unconscious at the bus stop", "expect_red_flag": true, "expect_rule": "redflag_unconscious"}
+{"id": "h2-012", "text": "he won't wake up", "expect_red_flag": true, "expect_rule": "redflag_unconscious"}
+{"id": "h2-013", "text": "jerking movements and foaming at mouth", "expect_red_flag": true, "expect_rule": "redflag_unconscious"}
+{"id": "h2-014", "text": "dizzy and fell down, now very drowsy", "expect_red_flag": true, "expect_rule": "redflag_unconscious"}
+{"id": "h2-015", "text": "face on one side not moving", "expect_red_flag": true, "expect_rule": "redflag_stroke"}
+{"id": "h2-016", "text": "cannot raise both arms, words coming out wrong", "expect_red_flag": true, "expect_rule": "redflag_stroke"}
+{"id": "h2-017", "text": "sudden worst headache of my life", "expect_red_flag": true, "expect_rule": "redflag_stroke"}
+{"id": "h2-018", "text": "thinking of hanging myself", "expect_red_flag": true, "expect_rule": "redflag_self_harm"}
+{"id": "h2-019", "text": "I have pills saved to end things", "expect_red_flag": true, "expect_rule": "redflag_self_harm"}
+{"id": "h2-020", "text": "apni jaan lena chahta hoon", "expect_red_flag": true, "expect_rule": "redflag_self_harm"}
+{"id": "h2-021", "text": "bleeding from the head after a fall", "expect_red_flag": true, "expect_rule": "redflag_bleeding"}
+{"id": "h2-022", "text": "blood pouring from the wound", "expect_red_flag": true, "expect_rule": "redflag_bleeding"}
+{"id": "h2-023", "text": "vomit looks like coffee grounds", "expect_red_flag": true, "expect_rule": "redflag_bleeding"}
+{"id": "h2-024", "text": "pregnant with severe stomach pain", "expect_red_flag": true, "expect_rule": "redflag_bleeding"}
+{"id": "h2-025", "text": "son swallowed bleach", "expect_red_flag": true, "expect_rule": "redflag_self_harm"}
+{"id": "h2-026", "text": "chest acne won't go away", "expect_red_flag": false}
+{"id": "h2-027", "text": "heart rate tracker shows 72", "expect_red_flag": false}
+{"id": "h2-028", "text": "I get breathless only after running 10 km", "expect_red_flag": false}
+{"id": "h2-029", "text": "fell off my bike, small scrape on knee", "expect_red_flag": false}
+{"id": "h2-030", "text": "can't sleep well lately", "expect_red_flag": false}
+{"id": "h2-031", "text": "periods are a bit heavy this month", "expect_red_flag": false}
+{"id": "h2-032", "text": "need a refill for my inhaler", "expect_red_flag": false}
+{"id": "h2-033", "text": "seasonal cough and cold", "expect_red_flag": false}
+{"id": "h2-034", "text": "my mother fainted once in 2019, need a cardiology follow-up", "expect_red_flag": false}
+{"id": "h2-035", "text": "slight headache after long screen time", "expect_red_flag": false}
+{"id": "h2-036", "text": "dil ki dhadkan normal check karni hai", "expect_red_flag": false}
+{"id": "h2-037", "text": "bleeding gums when brushing", "expect_red_flag": false}
+{"id": "h2-038", "text": "small cut on finger, stopped bleeding", "expect_red_flag": false}
+{"id": "h2-039", "text": "want a diet plan", "expect_red_flag": false}
+{"id": "h2-040", "text": "back pain after sitting long", "expect_red_flag": false}

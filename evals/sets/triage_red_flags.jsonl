@@ -1,0 +1,135 @@
+{"id": "rf-001", "text": "chest pain since morning", "expect_red_flag": true, "expect_rule": "redflag_chest_pain"}
+{"id": "rf-002", "text": "I have chest pain when I climb stairs", "expect_red_flag": true, "expect_rule": "redflag_chest_pain"}
+{"id": "rf-003", "text": "sharp pain in my chest", "expect_red_flag": true, "expect_rule": "redflag_chest_pain"}
+{"id": "rf-004", "text": "pain in the chest spreading to left arm", "expect_red_flag": true, "expect_rule": "redflag_chest_pain"}
+{"id": "rf-005", "text": "tight chest and sweating", "expect_red_flag": true, "expect_rule": "redflag_chest_pain"}
+{"id": "rf-006", "text": "chest tightness for an hour", "expect_red_flag": true, "expect_rule": "redflag_chest_pain"}
+{"id": "rf-007", "text": "pressure in my chest", "expect_red_flag": true, "expect_rule": "redflag_chest_pain"}
+{"id": "rf-008", "text": "heaviness in my chest", "expect_red_flag": true, "expect_rule": "redflag_chest_pain"}
+{"id": "rf-009", "text": "my father has crushing chest pain", "expect_red_flag": true, "expect_rule": "redflag_chest_pain"}
+{"id": "rf-010", "text": "seene mein dard hai", "expect_red_flag": true, "expect_rule": "redflag_chest_pain"}
+{"id": "rf-011", "text": "seene mein bahut dard ho raha hai", "expect_red_flag": true, "expect_rule": "redflag_chest_pain"}
+{"id": "rf-012", "text": "chhati mein dard", "expect_red_flag": true, "expect_rule": "redflag_chest_pain"}
+{"id": "rf-013", "text": "chest is hurting a lot", "expect_red_flag": true, "expect_rule": "redflag_chest_pain"}
+{"id": "rf-014", "text": "mom says her chest feels heavy", "expect_red_flag": true, "expect_rule": "redflag_chest_pain"}
+{"id": "rf-015", "text": "Chest Pain!!", "expect_red_flag": true, "expect_rule": "redflag_chest_pain"}
+{"id": "rf-016", "text": "no relief from chest pain since morning", "expect_red_flag": true, "expect_rule": "redflag_chest_pain"}
+{"id": "rf-017", "text": "no fever but chest pain since an hour", "expect_red_flag": true, "expect_rule": "redflag_chest_pain"}
+{"id": "rf-018", "text": "I can't breathe properly", "expect_red_flag": true, "expect_rule": "redflag_breathing"}
+{"id": "rf-019", "text": "difficulty breathing since last night", "expect_red_flag": true, "expect_rule": "redflag_breathing"}
+{"id": "rf-020", "text": "shortness of breath when lying down", "expect_red_flag": true, "expect_rule": "redflag_breathing"}
+{"id": "rf-021", "text": "short of breath and wheezing badly", "expect_red_flag": true, "expect_rule": "redflag_breathing"}
+{"id": "rf-022", "text": "breathless after walking a few steps", "expect_red_flag": true, "expect_rule": "redflag_breathing"}
+{"id": "rf-023", "text": "sudden breathlessness", "expect_red_flag": true, "expect_rule": "redflag_breathing"}
+{"id": "rf-024", "text": "gasping for air", "expect_red_flag": true, "expect_rule": "redflag_breathing"}
+{"id": "rf-025", "text": "unable to breathe", "expect_red_flag": true, "expect_rule": "redflag_breathing"}
+{"id": "rf-026", "text": "saans lene mein takleef", "expect_red_flag": true, "expect_rule": "redflag_breathing"}
+{"id": "rf-027", "text": "saans phool rahi hai", "expect_red_flag": true, "expect_rule": "redflag_breathing"}
+{"id": "rf-028", "text": "saans nahi aa rahi", "expect_red_flag": true, "expect_rule": "redflag_breathing"}
+{"id": "rf-029", "text": "my baby is breathing very fast and lips look blue", "expect_red_flag": true, "expect_rule": "redflag_breathing"}
+{"id": "rf-030", "text": "he fainted at work", "expect_red_flag": true, "expect_rule": "redflag_unconscious"}
+{"id": "rf-031", "text": "she passed out in the bathroom", "expect_red_flag": true, "expect_rule": "redflag_unconscious"}
+{"id": "rf-032", "text": "my grandfather collapsed", "expect_red_flag": true, "expect_rule": "redflag_unconscious"}
+{"id": "rf-033", "text": "unconscious and not responding", "expect_red_flag": true, "expect_rule": "redflag_unconscious"}
+{"id": "rf-034", "text": "not waking up", "expect_red_flag": true, "expect_rule": "redflag_unconscious"}
+{"id": "rf-035", "text": "behosh ho gaye", "expect_red_flag": true, "expect_rule": "redflag_unconscious"}
+{"id": "rf-036", "text": "had a seizure just now", "expect_red_flag": true, "expect_rule": "redflag_unconscious"}
+{"id": "rf-037", "text": "fits aaye", "expect_red_flag": true, "expect_rule": "redflag_unconscious"}
+{"id": "rf-038", "text": "slurred speech suddenly", "expect_red_flag": true, "expect_rule": "redflag_stroke"}
+{"id": "rf-039", "text": "his face is drooping on one side", "expect_red_flag": true, "expect_rule": "redflag_stroke"}
+{"id": "rf-040", "text": "face drooping and can't lift arm", "expect_red_flag": true, "expect_rule": "redflag_stroke"}
+{"id": "rf-041", "text": "weakness on one side of the body", "expect_red_flag": true, "expect_rule": "redflag_stroke"}
+{"id": "rf-042", "text": "sudden numbness on one side and confused", "expect_red_flag": true, "expect_rule": "redflag_stroke"}
+{"id": "rf-043", "text": "speech is slurred and face looks crooked", "expect_red_flag": true, "expect_rule": "redflag_stroke"}
+{"id": "rf-044", "text": "I want to kill myself", "expect_red_flag": true, "expect_rule": "redflag_self_harm"}
+{"id": "rf-045", "text": "thinking about suicide", "expect_red_flag": true, "expect_rule": "redflag_self_harm"}
+{"id": "rf-046", "text": "I want to end my life", "expect_red_flag": true, "expect_rule": "redflag_self_harm"}
+{"id": "rf-047", "text": "I don't want to live anymore", "expect_red_flag": true, "expect_rule": "redflag_self_harm"}
+{"id": "rf-048", "text": "self harm thoughts", "expect_red_flag": true, "expect_rule": "redflag_self_harm"}
+{"id": "rf-049", "text": "I have been cutting myself", "expect_red_flag": true, "expect_rule": "redflag_self_harm"}
+{"id": "rf-050", "text": "vomiting blood", "expect_red_flag": true, "expect_rule": "redflag_bleeding"}
+{"id": "rf-051", "text": "coughing up blood", "expect_red_flag": true, "expect_rule": "redflag_bleeding"}
+{"id": "rf-052", "text": "heavy bleeding that won't stop", "expect_red_flag": true, "expect_rule": "redflag_bleeding"}
+{"id": "rf-053", "text": "blood in vomit since morning", "expect_red_flag": true, "expect_rule": "redflag_bleeding"}
+{"id": "rf-054", "text": "khoon ki ulti", "expect_red_flag": true, "expect_rule": "redflag_bleeding"}
+{"id": "rf-055", "text": "deep cut, bleeding a lot", "expect_red_flag": true, "expect_rule": "redflag_bleeding"}
+{"id": "rf-056", "text": "no chest pain, just a mild skin rash on my arm", "expect_red_flag": false}
+{"id": "rf-057", "text": "not having chest pain, only a cough", "expect_red_flag": false}
+{"id": "rf-058", "text": "without chest pain or breathlessness, mild fever", "expect_red_flag": false}
+{"id": "rf-059", "text": "patient denies chest pain", "expect_red_flag": false}
+{"id": "rf-060", "text": "I don't have chest pain, it's my knee", "expect_red_flag": false}
+{"id": "rf-061", "text": "seene mein dard nahi hai, bas khansi hai", "expect_red_flag": false}
+{"id": "rf-062", "text": "knee pain for a week", "expect_red_flag": false}
+{"id": "rf-063", "text": "mild fever and body ache since two days", "expect_red_flag": false}
+{"id": "rf-064", "text": "itchy rash on legs", "expect_red_flag": false}
+{"id": "rf-065", "text": "sore throat and ear pain", "expect_red_flag": false}
+{"id": "rf-066", "text": "acidity after meals", "expect_red_flag": false}
+{"id": "rf-067", "text": "back pain after lifting a box", "expect_red_flag": false}
+{"id": "rf-068", "text": "dandruff and hair fall", "expect_red_flag": false}
+{"id": "rf-069", "text": "need a diabetes follow-up", "expect_red_flag": false}
+{"id": "rf-070", "text": "routine blood pressure check", "expect_red_flag": false}
+{"id": "rf-071", "text": "headache in the evenings", "expect_red_flag": false}
+{"id": "rf-072", "text": "bukhar aur khansi hai", "expect_red_flag": false}
+{"id": "rf-073", "text": "stomach ache after street food", "expect_red_flag": false}
+{"id": "rf-074", "text": "chest congestion from a cold", "expect_red_flag": false}
+{"id": "rf-075", "text": "my breath smells bad", "expect_red_flag": false}
+{"id": "rf-076", "text": "pimples on my face", "expect_red_flag": false}
+{"id": "rf-077", "text": "loose motion since yesterday", "expect_red_flag": false}
+{"id": "rf-078", "text": "eye irritation from screen time", "expect_red_flag": false}
+{"id": "rf-079", "text": "shoulder stiffness", "expect_red_flag": false}
+{"id": "rf-080", "text": "want a general health check-up", "expect_red_flag": false}
+{"id": "rf-081", "text": "cough at night for a week", "expect_red_flag": false}
+{"id": "rf-082", "text": "feeling tired all the time", "expect_red_flag": false}
+{"id": "rf-083", "text": "heel pain in the morning", "expect_red_flag": false}
+{"id": "rf-084", "text": "ringing in my ear", "expect_red_flag": false}
+{"id": "rf-085", "text": "toothache", "expect_red_flag": false}
+{"id": "ho-001", "text": "my chest feels like someone is sitting on it", "expect_red_flag": true, "expect_rule": "redflag_chest_pain"}
+{"id": "ho-002", "text": "pain radiating from chest to jaw", "expect_red_flag": true, "expect_rule": "redflag_chest_pain"}
+{"id": "ho-003", "text": "chest me dard ho raha hai", "expect_red_flag": true, "expect_rule": "redflag_chest_pain"}
+{"id": "ho-004", "text": "heart attack jaisa lag raha hai", "expect_red_flag": true, "expect_rule": "redflag_chest_pain"}
+{"id": "ho-005", "text": "burning pain in the centre of my chest with sweating", "expect_red_flag": true, "expect_rule": "redflag_chest_pain"}
+{"id": "ho-006", "text": "my husband is clutching his chest", "expect_red_flag": true, "expect_rule": "redflag_chest_pain"}
+{"id": "ho-007", "text": "struggling to breathe", "expect_red_flag": true, "expect_rule": "redflag_breathing"}
+{"id": "ho-008", "text": "breathing is very hard", "expect_red_flag": true, "expect_rule": "redflag_breathing"}
+{"id": "ho-009", "text": "cannot catch my breath", "expect_red_flag": true, "expect_rule": "redflag_breathing"}
+{"id": "ho-010", "text": "choking and can't speak", "expect_red_flag": true, "expect_rule": "redflag_breathing"}
+{"id": "ho-011", "text": "saans rukk rahi hai", "expect_red_flag": true, "expect_rule": "redflag_breathing"}
+{"id": "ho-012", "text": "wheezing and turning blue", "expect_red_flag": true, "expect_rule": "redflag_breathing"}
+{"id": "ho-013", "text": "blacked out for a minute", "expect_red_flag": true, "expect_rule": "redflag_unconscious"}
+{"id": "ho-014", "text": "she fell and isn't responding", "expect_red_flag": true, "expect_rule": "redflag_unconscious"}
+{"id": "ho-015", "text": "dad lost consciousness", "expect_red_flag": true, "expect_rule": "redflag_unconscious"}
+{"id": "ho-016", "text": "child is having convulsions", "expect_red_flag": true, "expect_rule": "redflag_unconscious"}
+{"id": "ho-017", "text": "chakkar aakar gir gaye", "expect_red_flag": true, "expect_rule": "redflag_unconscious"}
+{"id": "ho-018", "text": "mouth is twisted and arm is weak", "expect_red_flag": true, "expect_rule": "redflag_stroke"}
+{"id": "ho-019", "text": "sudden confusion and can't speak properly", "expect_red_flag": true, "expect_rule": "redflag_stroke"}
+{"id": "ho-020", "text": "left side of body went numb suddenly", "expect_red_flag": true, "expect_rule": "redflag_stroke"}
+{"id": "ho-021", "text": "vision lost in one eye suddenly", "expect_red_flag": true, "expect_rule": "redflag_stroke"}
+{"id": "ho-022", "text": "I feel like ending it all", "expect_red_flag": true, "expect_rule": "redflag_self_harm"}
+{"id": "ho-023", "text": "took too many sleeping pills", "expect_red_flag": true, "expect_rule": "redflag_self_harm"}
+{"id": "ho-024", "text": "mar jaana chahta hoon", "expect_red_flag": true, "expect_rule": "redflag_self_harm"}
+{"id": "ho-025", "text": "no reason to live", "expect_red_flag": true, "expect_rule": "redflag_self_harm"}
+{"id": "ho-026", "text": "bleeding won't stop after the accident", "expect_red_flag": true, "expect_rule": "redflag_bleeding"}
+{"id": "ho-027", "text": "passing black tarry stool and dizzy", "expect_red_flag": true, "expect_rule": "redflag_bleeding"}
+{"id": "ho-028", "text": "throwing up blood", "expect_red_flag": true, "expect_rule": "redflag_bleeding"}
+{"id": "ho-029", "text": "pregnant and bleeding heavily", "expect_red_flag": true, "expect_rule": "redflag_bleeding"}
+{"id": "ho-030", "text": "khoon beh raha hai band nahi ho raha", "expect_red_flag": true, "expect_rule": "redflag_bleeding"}
+{"id": "ho-031", "text": "my chest has a small rash", "expect_red_flag": false}
+{"id": "ho-032", "text": "breathing exercises for stress", "expect_red_flag": false}
+{"id": "ho-033", "text": "I passed my exam but have a headache", "expect_red_flag": false}
+{"id": "ho-034", "text": "fainting spell last year, now fine, need check-up", "expect_red_flag": false}
+{"id": "ho-035", "text": "blood test report review", "expect_red_flag": false}
+{"id": "ho-036", "text": "I cut my finger while cooking, small cut", "expect_red_flag": false}
+{"id": "ho-037", "text": "heart health check-up", "expect_red_flag": false}
+{"id": "ho-038", "text": "no breathing problems, just a runny nose", "expect_red_flag": false}
+{"id": "ho-039", "text": "my arm is weak after gym", "expect_red_flag": false}
+{"id": "ho-040", "text": "numb toes in cold weather", "expect_red_flag": false}
+{"id": "ho-041", "text": "feeling low after exams", "expect_red_flag": false}
+{"id": "ho-042", "text": "nose bleed once last week, stopped quickly", "expect_red_flag": false}
+{"id": "ho-043", "text": "chest x-ray report question", "expect_red_flag": false}
+{"id": "ho-044", "text": "sore muscles after running", "expect_red_flag": false}
+{"id": "ho-045", "text": "bp medicine refill", "expect_red_flag": false}
+{"id": "ho-046", "text": "kamar dard hai", "expect_red_flag": false}
+{"id": "ho-047", "text": "pet mein gas hai", "expect_red_flag": false}
+{"id": "ho-048", "text": "routine dental cleaning", "expect_red_flag": false}
+{"id": "ho-049", "text": "eczema flare on hands", "expect_red_flag": false}
+{"id": "ho-050", "text": "dizzy when I stand up quickly", "expect_red_flag": false}

@@ -1,0 +1,30 @@
+{"id": "sp-001", "text": "knee pain for a week", "expect_specialty": "Orthopaedics"}
+{"id": "sp-002", "text": "back pain after lifting a box", "expect_specialty": "Orthopaedics"}
+{"id": "sp-003", "text": "shoulder pain when raising my arm", "expect_specialty": "Orthopaedics"}
+{"id": "sp-004", "text": "joint swelling in my fingers", "expect_specialty": "Orthopaedics"}
+{"id": "sp-005", "text": "I think I have a fracture in my wrist", "expect_specialty": "Orthopaedics"}
+{"id": "sp-006", "text": "palpitations at night", "expect_specialty": "Cardiology"}
+{"id": "sp-007", "text": "high bp readings at home", "expect_specialty": "Cardiology"}
+{"id": "sp-008", "text": "my heart races when I climb stairs", "expect_specialty": "Cardiology"}
+{"id": "sp-009", "text": "itchy rash on legs", "expect_specialty": "Dermatology"}
+{"id": "sp-010", "text": "pimples on my face", "expect_specialty": "Dermatology"}
+{"id": "sp-011", "text": "skin peeling on hands", "expect_specialty": "Dermatology"}
+{"id": "sp-012", "text": "acne and dark spots", "expect_specialty": "Dermatology"}
+{"id": "sp-013", "text": "sore throat and ear pain", "expect_specialty": "ENT"}
+{"id": "sp-014", "text": "blocked sinus and headache", "expect_specialty": "ENT"}
+{"id": "sp-015", "text": "hearing loss in left ear", "expect_specialty": "ENT"}
+{"id": "sp-016", "text": "ringing in my ear", "expect_specialty": "ENT"}
+{"id": "sp-017", "text": "cough at night for a week", "expect_specialty": "Pulmonology"}
+{"id": "sp-018", "text": "wheezing when I climb stairs", "expect_specialty": "Pulmonology"}
+{"id": "sp-019", "text": "my asthma is getting worse", "expect_specialty": "Pulmonology"}
+{"id": "sp-020", "text": "acidity after meals", "expect_specialty": "Gastroenterology"}
+{"id": "sp-021", "text": "stomach ache after street food", "expect_specialty": "Gastroenterology"}
+{"id": "sp-022", "text": "loose motion since yesterday", "expect_specialty": "Gastroenterology"}
+{"id": "sp-023", "text": "vomiting since morning", "expect_specialty": "Gastroenterology"}
+{"id": "sp-024", "text": "migraine twice a week", "expect_specialty": "Neurology"}
+{"id": "sp-025", "text": "numbness in my fingers", "expect_specialty": "Neurology"}
+{"id": "sp-026", "text": "frequent headaches", "expect_specialty": "Neurology"}
+{"id": "sp-027", "text": "mild fever and body ache", "expect_specialty": "General Medicine"}
+{"id": "sp-028", "text": "feeling tired all the time", "expect_specialty": "General Medicine"}
+{"id": "sp-029", "text": "bukhar hai teen din se", "expect_specialty": "General Medicine"}
+{"id": "sp-030", "text": "need a general health check-up", "expect_specialty": "General Medicine"}
