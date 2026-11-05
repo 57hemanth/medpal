@@ -3,7 +3,8 @@
     uv run python -m infra.scripts.load_test --base http://localhost:8000 --rate 1400 --minutes 5 --burst 3
 
 Traffic is a realistic mix played by the seeded dev users: a triage start, its safety-screen answers,
-a booking (each with its own idempotency key), a records question, and a front-desk queue read.
+a booking (each with its own idempotency key), a multi-part assistant message, a records question,
+and a front-desk queue read.
 Requests are fired on a Poisson schedule at the target hourly rate, then at `burst` times that rate
 (a morning rush). Results: p50/p95/p99 and error rate per endpoint, checked against the latency targets,
 written to evals/runs/load-<timestamp>.md. Exit code 1 if a target or the error budget is missed.
@@ -36,7 +37,18 @@ SYMPTOMS = [
     "mild fever and body ache",
     "sore throat and ear pain",
 ]
-TARGET_P95_MS = {"triage.start": 4000, "triage.safety": 4000, "triage.book": 4000, "records.question": 8000}
+TARGET_P95_MS = {
+    "triage.start": 4000,
+    "triage.safety": 4000,
+    "triage.book": 4000,
+    "records.question": 8000,
+    "assistant": 10000,  # routing model + specialists in parallel
+}
+MIXED = [
+    "My knee has hurt for a week. Also, what was my LDL last time?",
+    "I have a skin rash, and can you tell me my HbA1c?",
+    "frequent headaches in the evening",
+]
 MAX_ERROR_RATE = 0.01
 
 samples: dict[str, list[float]] = defaultdict(list)
@@ -95,6 +107,13 @@ async def records_question(client: httpx.AsyncClient) -> None:
     )
 
 
+async def assistant(client: httpx.AsyncClient) -> None:
+    h = random.choice(PATIENTS)
+    await timed(
+        "assistant", lambda: client.post("/api/assistant", headers=h, json={"message": random.choice(MIXED)})
+    )
+
+
 async def desk_queue(client: httpx.AsyncClient) -> None:
     await timed("desk.handoffs", lambda: client.get("/api/front-desk/handoffs", headers=DESK))
 
@@ -105,7 +124,15 @@ async def phase(client: httpx.AsyncClient, per_hour: float, seconds: float) -> N
     while time.monotonic() < deadline:
         await asyncio.sleep(random.expovariate(rate))
         roll = random.random()
-        job = patient_journey if roll < 0.7 else records_question if roll < 0.9 else desk_queue
+        job = (
+            patient_journey
+            if roll < 0.55
+            else assistant
+            if roll < 0.75
+            else records_question
+            if roll < 0.9
+            else desk_queue
+        )
         tasks.append(asyncio.create_task(job(client)))
     await asyncio.gather(*tasks)
 

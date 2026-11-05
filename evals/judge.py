@@ -86,6 +86,15 @@ async def judge_all(client: EgressChatClient, cases: list[dict[str, object]]) ->
 
 
 async def main() -> None:
+    import argparse
+
+    parser = argparse.ArgumentParser()
+    parser.add_argument(
+        "--preview",
+        action="store_true",
+        help="also compare the judge with the DRAFT labels: a review aid, never a calibration",
+    )
+    args = parser.parse_args()
     settings = get_settings()
     if settings.chat_provider == "fake":
         raise SystemExit("configure a real model (MEDPAL_CHAT_PROVIDER/MODEL/API_KEY) to run the judge")
@@ -95,6 +104,16 @@ async def main() -> None:
     result = calibrate(cases, verdicts)
     print(f"judge agreement on reviewed labels: {result.agreement}  kappa: {result.kappa}  ({result.why})")
     print("CALIBRATED" if result.calibrated else "NOT CALIBRATED: do not use judge scores")
+    if args.preview:
+        drafts = [bool(c["faithful"]) for c in cases]
+        agree = sum(d == v for d, v in zip(drafts, verdicts, strict=True)) / len(cases)
+        print(
+            f"\npreview against DRAFT labels (not a calibration): agreement {agree:.0%}, "
+            f"kappa {cohen_kappa(drafts, verdicts)}  ({len(cases)} cases)"
+        )
+        for case, verdict in zip(cases, verdicts, strict=True):
+            if bool(case["faithful"]) != verdict:
+                print(f"  disagree {case['id']}: draft={case['faithful']} judge={verdict}  {case['answer']}")
 
 
 if __name__ == "__main__":

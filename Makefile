@@ -1,7 +1,7 @@
 COMPOSE := docker compose -f infra/docker-compose.yml
 RUN := uv run
 
-.PHONY: eval worker cost-report load-test up-boundary boundary-check help install up up-all down reset migrate api web-install web-build web-test test test-unit test-int test-data lint fmt check data seed generate
+.PHONY: eval live-check judge worker cost-report load-test up-boundary boundary-check help install up up-all down reset migrate api web-install web-build web-test test test-unit test-int test-data lint fmt check data seed generate
 
 help:            ## list targets
 	@grep -E '^[a-z-]+:.*##' $(MAKEFILE_LIST) | awk -F':.*## ' '{printf "  %-10s %s\n", $$1, $$2}'
@@ -64,6 +64,12 @@ test-int:        ## integration tests (need `make up migrate`; skipped if Postgr
 
 eval:            ## run the evaluation sets and enforce the release gates
 	$(RUN) python -m evals.run --check
+
+live-check:      ## real-model checks against a running API (needs a model key in .env): records, routing, scribe, fallback
+	$(RUN) python -m evals.live --base http://localhost:8000
+
+judge:           ## run the LLM judge; --preview compares with draft labels (review aid, not a calibration)
+	$(RUN) python -m evals.judge --preview
 
 cost-report:     ## cost sheet from real traces (needs a running stack with traffic)
 	$(RUN) python -m infra.scripts.cost_report
