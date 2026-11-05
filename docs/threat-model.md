@@ -19,7 +19,12 @@ STRIDE plus the threats specific to LLM systems. Each row names the control **an
 
 | Flow | Threat | STRIDE | Control | Proof | Status |
 |---|---|---|---|---|---|
-| All APIs | Someone poses as a patient or caregiver | Spoofing | OIDC bearer tokens verified against the issuer's keys; dev headers refused in production | config validator; OIDC tests | ✅ |
+| All APIs | Someone poses as a patient or caregiver | Spoofing | Mobile sign-in session cookie, or OIDC bearer tokens verified against the issuer's keys; dev headers refused in production and ignored in `otp` mode | config validator; OIDC tests | ✅ |
+| Sign-in | A one-time code is guessed | Spoofing | 6 digits, 5 minutes, 5 wrong tries per code, 5 codes per number per hour; attempts committed before the error | `test_a_code_works_once_and_wrong_codes_are_capped`, `test_codes_per_number_are_rate_limited` | ✅ |
+| Sign-in | A session cookie is forged, edited or stolen by script | Spoofing / tampering | HMAC-signed with a purpose and expiry; HttpOnly, SameSite=Lax, Secure in production; production refuses the default secret | `test_a_session_round_trips_and_a_tampered_one_is_refused`, `test_production_needs_a_real_secret_and_sms_gateway_for_mobile_sign_in` | ✅ |
+| Sign-in | Someone switches to a role they don't hold | Elevation of privilege | Roles read from the database at each switch; the cookie is re-issued only for a held role | `test_sharing_by_number_invites_and_only_the_patient_can_share` | ✅ |
+| Sign-in | A SIM swap takes over an account | Spoofing | Out of MedPal's control; staff should use OIDC with MFA before real deployment | ADR-0014 | ⏳ |
+| Sharing | A caregiver re-shares someone else's record | Elevation of privilege | Only a patient can share, and only their own record | `test_sharing_by_number_invites_and_only_the_patient_can_share` | ✅ |
 | Triage/booking | A model or tool argument names another patient | Elevation of privilege | Identity comes from the auth context only; no tool takes a patient id | `test_tools_are_listed_with_safety_hints` (no `patient_id` input) | ✅ |
 | Triage/scribe | Resuming someone else's paused run | Elevation of privilege | Thread-ownership check on every resume | `test_cannot_resume_someone_elses_thread` | ✅ |
 | Scribe | A doctor starts or signs a consultation that isn't theirs | Elevation of privilege | Encounter creation limited to the appointment's doctor; signing limited to the encounter's doctor | `test_only_the_appointments_doctor_can_start…` | ✅ |

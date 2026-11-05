@@ -172,6 +172,12 @@ Every suite above runs on a local fake model. These came from running the produc
 - *What happened:* for specialty matching, rules-first with the model when unsure scored 30/30 on the tuned set and 27/30 on unseen phrasings; model-first scored 24/30 and 29/30. Most of model-first's "misses" (finger-joint swelling → Rheumatology, vomiting since morning → General Medicine) are defensible; the rules' misses (a groin lump that bulges on coughing → Pulmonology) are not.
 - *Decision:* rules first for now (best on the labels we have, no model latency when the rules are sure), with the comparison recorded for clinical review of the labels.
 
+**34. A brute-force cap that rolled itself back.**
+- *What happened:* the code check counted a wrong attempt and then raised an error inside the same database transaction. The error rolled back the count, so the "5 tries" limit never moved and a 6-digit code could be guessed without limit. The unit tests passed; only the test that makes five wrong guesses against real Postgres and then tries the right code caught it.
+- *Fix:* `verify` decides inside the transaction, commits the attempt, and raises afterwards.
+- *Test:* `test_a_code_works_once_and_wrong_codes_are_capped`.
+- *Lesson:* a counter that exists to survive failure must be committed before the failure is raised. Test limits against the real database, not a mock.
+
 ## Design choices worth copying
 
 - **Domain names in code** (`triage`, `records`, `scribe`), not internal codes: opaque names make every new reader look something up.

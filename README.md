@@ -43,13 +43,14 @@ MedPal automates the routine parts and keeps humans in charge of every decision 
 | Tracing on every run, cost per run, ops metrics, load test at 1,400 req/h | ✅ |
 | Evaluation sets with release gates, held-out generalisation set, calibrated LLM judge harness | ✅ judge needs clinician-reviewed labels |
 | Row-level security for every role, consent with expiry and revocation | ✅ |
+| Sign-in by mobile number and one-time code for every role; share records with a family member's number | ✅ SMS gateway at deployment (development shows the code) |
 | Presidio de-identification (English, Hinglish, Indian identifiers) | ✅ |
 | Append-only audit, immutable signed notes | ✅ |
-| Web app: role-based dashboards for patients, caregivers, doctors, front desk and compliance; audit log and operations views | ✅ profile switcher until sign-in is added |
+| Web app: role-based dashboards for patients, caregivers, doctors, front desk and compliance; audit log and operations views | ✅ |
 | Verified against a real model (Gemini): answers, refusals, routing, drafts, fallback, cost | ✅ `make live-check` |
 | Local speech-to-text | 🟡 adapter and upload UI; local model provisioning required |
 
-**Tests:** 259 unit · 64 data · 63 integration (real Postgres) · 10 frontend · 40 real-model checks · evaluation gates · lint, type checks and module-boundary contracts. See [implementation status](docs/implementation-status.md) for what has been verified against a live stack.
+**Tests:** 274 unit · 64 data · 72 integration (real Postgres) · 13 frontend · 40 real-model checks · evaluation gates · lint, type checks and module-boundary contracts. See [implementation status](docs/implementation-status.md) for what has been verified against a live stack.
 
 ## Quick start
 
@@ -66,14 +67,26 @@ make api         # app at http://localhost:8000, API docs at /docs
 
 ### The product
 
-Open **http://localhost:8000**. There's no sign-in yet: the app opens on the patient profile, and the profile switcher at the bottom of the sidebar moves between the synthetic workspace profiles.
+Open **http://localhost:8000** and sign in with a mobile number. In development there's no SMS gateway, so the one-time code is shown on screen, and the sign-in page lists the demo accounts (click one to start):
 
-| Profile | What they get |
+| Number | Who |
+|---|---|
+| 98200 00001 | Asha Verma: patient, and caregiver for her mother Lata (switch roles from the account menu) |
+| 98200 00002 / 00003 | Rohan Reddy, Lata Verma: patients |
+| 98200 00004 | Front desk |
+| 98200 00005 | Doctor (Nikhil Patel) |
+| 98200 00006 | Compliance |
+| 98200 00007 | Pharmacist |
+
+A number that isn't on MedPal yet registers a new patient record. To try sharing, sign in as Asha, open **Sharing & consent**, share with any new number (say 98200 00009), sign out, and sign in with that number: it opens straight into Asha's shared records.
+
+| Role | What they get |
 |---|---|
 | **Patient** (Asha Verma) | Home with next appointment and recent reports (open any report in the viewer) · care assistant (symptoms and report questions in one message, English or Hinglish) · appointments · health records with cited answers · sharing & consent |
 | **Caregiver** (Asha, for her mother Lata) | Lata's shared reports (view and ask about them), and the access granted to her |
 | **Doctor** | Today's consultations · consultation scribe: transcript → SOAP draft with stock-checked prescriptions → edit or redraft → sign · patient records |
 | **Front desk** | Overview with emergencies first · handoff queue · network appointments |
+| **Pharmacist** | Dispensing queue of signed prescriptions held at the clinic · stock with unmet demand and restock hints · medicine catalogue with substitutes |
 | **Compliance** | Operations: latency, error rate and model spend per workflow from in-boundary traces · append-only audit log |
 
 ### Try it
@@ -111,7 +124,7 @@ Text is de-identified before it leaves; without a key, a local placeholder model
 
 The dev identity above is **Asha Verma** (patient, Pune), who can also act as caregiver for her mother **Lata**. Other dev logins (front desk, doctor, compliance) are listed by `make seed`.
 
-> Dev authentication trusts `X-Dev-*` headers and refuses to start when `MEDPAL_ENV=prod`. The web app switches between synthetic profiles; browser sign-in (OIDC) is the next step before any real deployment.
+> The web app signs in with a session cookie. For scripts, development also accepts the `X-Dev-*` headers above; they are ignored when `MEDPAL_AUTH_MODE=otp` and refused when `MEDPAL_ENV=prod`. See [ADR-0014](docs/adr/0014-mobile-sign-in.md).
 
 ### Tests and checks
 
