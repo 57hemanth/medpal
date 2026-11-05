@@ -37,6 +37,14 @@ class Settings(BaseSettings):
     chat_temperature: float = 0.0
     # Model routing: a smaller model for classification-style steps (defaults to the primary model).
     chat_small_model: str | None = None
+    # Reasoning effort for models that "think" (Gemini thinking levels; ignored by other providers).
+    # Routing labels need little; drafting and cited answers may want more. Unset = provider default.
+    chat_thinking_level: Literal["low", "medium", "high"] | None = None
+    # Every provider attempt has a hard deadline; a timeout is a provider failure (next in the chain, then
+    # a safe "unavailable"). SDK retries stay low so one call can't stretch into minutes of backoff.
+    chat_timeout_seconds: float = 30.0
+    chat_max_retries: int = 1
+    chat_small_thinking_level: Literal["low", "medium", "high"] | None = None
     # Fallback provider, tried when the primary fails or returns invalid output.
     chat_fallback_provider: Literal["fake", "gemini", "openai", "anthropic", "openai-compatible"] | None = (
         None

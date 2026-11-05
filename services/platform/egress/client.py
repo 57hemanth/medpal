@@ -10,6 +10,7 @@ from typing import Any, Protocol, TypeVar
 
 from pydantic import BaseModel, ValidationError
 
+from services.platform.egress.providers import last_call
 from services.platform.phi.scrubber import TokenMap, assert_clean, reidentify, tokenise
 from services.platform.tracing import estimate_tokens, record_model_call
 
@@ -186,12 +187,12 @@ class EgressChatClient:
                 estimated=True,
             )
             raise ModelUnavailable("model_call_failed") from exc
-        # Structured output rarely carries usage through LangChain, so tokens are estimated and flagged.
+        used, usage = last_call()
         record_model_call(
-            _model_name(model),
+            used or _model_name(model),
             started=started,
-            tokens_in=prompt_tokens,
-            tokens_out=estimate_tokens(result.model_dump_json()),
-            estimated=True,
+            tokens_in=usage[0] if usage else prompt_tokens,
+            tokens_out=usage[1] if usage else estimate_tokens(result.model_dump_json()),
+            estimated=usage is None,
         )
         return result

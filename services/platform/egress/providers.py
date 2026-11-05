@@ -2,9 +2,11 @@
 
 from __future__ import annotations
 
+import asyncio
 import logging
 import re
 from collections.abc import Mapping
+from contextvars import ContextVar
 from typing import Any, TypeVar, cast
 
 from pydantic import BaseModel
@@ -88,6 +90,9 @@ def _build_one(
     temperature: float,
     *,
     env: str = "MEDPAL_CHAT",
+    thinking_level: str | None = None,
+    timeout: float | None = None,
+    max_retries: int = 1,
 ) -> Any:
     """One LangChain chat model. Vendor imports stay inside this module, so application code depends on
     the LangChain chat-model surface, never on a vendor SDK."""
@@ -103,25 +108,46 @@ def _build_one(
         case "gemini":
             from langchain_google_genai import ChatGoogleGenerativeAI
 
+            extra: dict[str, Any] = {}
+            if thinking_level:
+                extra["thinking_config"] = {"thinking_level": thinking_level}
             return cast(Any, ChatGoogleGenerativeAI)(
-                model=model, google_api_key=key(), temperature=temperature
+                model=model,
+                google_api_key=key(),
+                temperature=temperature,
+                timeout=timeout,
+                max_retries=max_retries,
+                **extra,
             )
         case "openai":
             from langchain_openai import ChatOpenAI
 
-            return cast(Any, ChatOpenAI)(model=model, api_key=key(), temperature=temperature)
+            return cast(Any, ChatOpenAI)(
+                model=model, api_key=key(), temperature=temperature, timeout=timeout, max_retries=max_retries
+            )
         case "openai-compatible":
             if not base_url:
                 raise ValueError(f"{env}_BASE_URL is required for openai-compatible")
             from langchain_openai import ChatOpenAI
 
             return cast(Any, ChatOpenAI)(
-                model=model, api_key=key(), base_url=base_url, temperature=temperature
+                model=model,
+                api_key=key(),
+                base_url=base_url,
+                temperature=temperature,
+                timeout=timeout,
+                max_retries=max_retries,
             )
         case "anthropic":
             from langchain_anthropic import ChatAnthropic
 
-            return cast(Any, ChatAnthropic)(model_name=model, api_key=key(), temperature=temperature)
+            return cast(Any, ChatAnthropic)(
+                model_name=model,
+                api_key=key(),
+                temperature=temperature,
+                timeout=timeout,
+                max_retries=max_retries,
+            )
     raise ValueError(f"unsupported chat provider: {provider}")
 
 
@@ -133,28 +159,59 @@ def build_chat_model(settings: Settings) -> Any:
         settings.chat_api_key,
         settings.chat_base_url,
         settings.chat_temperature,
+        thinking_level=settings.chat_thinking_level,
+        timeout=settings.chat_timeout_seconds,
+        max_retries=settings.chat_max_retries,
     )
+
+
+# What the last call in *this* asyncio task used: (model name, (tokens in, tokens out) or None).
+# A ContextVar, not an attribute, so parallel branches sharing one model object never mix their numbers.
+_LAST_CALL: ContextVar[tuple[str | None, tuple[int, int] | None]] = ContextVar(
+    "medpal_last_model_call", default=(None, None)
+)
+
+
+def _status(exc: BaseException) -> str:
+    """The provider's status code, if any: enough to tell an outage from a bad request, never the
+    message, which could echo request content."""
+    code = getattr(exc, "code", None) or getattr(exc, "status_code", None)
+    return f"{type(exc).__name__}({code})" if code else type(exc).__name__
+
+
+def last_call() -> tuple[str | None, tuple[int, int] | None]:
+    return _LAST_CALL.get()
+
+
+def _usage_of(message: Any) -> tuple[int, int] | None:
+    usage = getattr(message, "usage_metadata", None)
+    if isinstance(usage, dict) and "input_tokens" in usage:
+        # Output includes reasoning ("thinking") tokens, which providers bill as output.
+        return int(usage["input_tokens"]), int(usage.get("output_tokens", 0))
+    return None
 
 
 class FallbackChatModel:
     """Try each model in order. A provider error, or a structured answer that fails its schema, moves on
     to the next model. Callers see one failure only when every model has failed."""
 
-    def __init__(self, models: list[tuple[str, Any]]) -> None:
+    def __init__(self, models: list[tuple[str, Any]], *, timeout: float | None = None) -> None:
         if not models:
             raise ValueError("at least one model is required")
         self.models = models
+        self.timeout = timeout  # per attempt: a hung provider gives the next one its turn
         self.last_used: str | None = None
 
     async def ainvoke(self, messages: list[dict[str, str]]) -> Any:
         last: Exception | None = None
         for name, model in self.models:
             try:
-                result = await model.ainvoke(messages)
+                result = await asyncio.wait_for(model.ainvoke(messages), self.timeout)
                 self.last_used = name
+                _LAST_CALL.set((name, _usage_of(result)))
                 return result
             except Exception as exc:  # noqa: BLE001 - every provider failure is a reason to try the next
-                log.warning("model %s failed: %s", name, type(exc).__name__)
+                log.warning("model %s failed: %s", name, _status(exc))
                 last = exc
         raise last  # type: ignore[misc]
 
@@ -171,13 +228,25 @@ class _FallbackStructured[Structured: BaseModel]:
         last: Exception | None = None
         for name, model in self._chain.models:
             try:
-                raw = await model.with_structured_output(self._schema).ainvoke(messages)
+                usage = None
+                if isinstance(model, FakeChatModel):
+                    raw = await asyncio.wait_for(
+                        model.with_structured_output(self._schema).ainvoke(messages), self._chain.timeout
+                    )
+                else:
+                    # include_raw keeps the provider's message, so real token usage (thinking included)
+                    # is metered instead of estimated.
+                    out = await model.with_structured_output(self._schema, include_raw=True).ainvoke(messages)
+                    if out.get("parsing_error") is not None or out.get("parsed") is None:
+                        raise ValueError(f"unparseable {self._schema.__name__}")
+                    raw, usage = out["parsed"], _usage_of(out.get("raw"))
                 data = raw.model_dump() if isinstance(raw, BaseModel) else dict(raw)
                 result = self._schema.model_validate(data)
                 self._chain.last_used = name
+                _LAST_CALL.set((name, usage))
                 return result
             except Exception as exc:  # noqa: BLE001 - provider errors and invalid output both fall through
-                log.warning("model %s failed for %s: %s", name, self._schema.__name__, type(exc).__name__)
+                log.warning("model %s failed for %s: %s", name, self._schema.__name__, _status(exc))
                 last = exc
         raise last  # type: ignore[misc]
 
@@ -193,6 +262,9 @@ def build_model_routes(settings: Settings) -> dict[str, Any]:
             settings.chat_api_key,
             settings.chat_base_url,
             settings.chat_temperature,
+            thinking_level=settings.chat_small_thinking_level or settings.chat_thinking_level,
+            timeout=settings.chat_timeout_seconds,
+            max_retries=settings.chat_max_retries,
         )
         if settings.chat_small_model
         else primary_large
@@ -201,10 +273,14 @@ def build_model_routes(settings: Settings) -> dict[str, Any]:
         _build_one(
             settings.chat_fallback_provider,
             settings.chat_fallback_model or "",
-            settings.chat_fallback_api_key,
+            # Same provider (e.g. a second Gemini model): reuse the primary key unless one is given.
+            settings.chat_fallback_api_key
+            or (settings.chat_api_key if settings.chat_fallback_provider == settings.chat_provider else None),
             settings.chat_fallback_base_url,
             settings.chat_temperature,
             env="MEDPAL_CHAT_FALLBACK",
+            timeout=settings.chat_timeout_seconds,
+            max_retries=settings.chat_max_retries,
         )
         if settings.chat_fallback_provider
         else None
@@ -214,7 +290,7 @@ def build_model_routes(settings: Settings) -> dict[str, Any]:
         models = [(f"{settings.chat_provider}:{name}", model)]
         if fallback is not None:
             models.append((f"{settings.chat_fallback_provider}:{settings.chat_fallback_model}", fallback))
-        return FallbackChatModel(models)
+        return FallbackChatModel(models, timeout=settings.chat_timeout_seconds)
 
     return {
         "small": chain(settings.chat_small_model or settings.chat_model, primary_small),

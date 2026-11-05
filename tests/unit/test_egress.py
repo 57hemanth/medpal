@@ -206,3 +206,110 @@ def test_routes_build_from_configuration():
     assert [name for name, _ in routes["small"].models] == ["fake:tiny", "fake:backup"]
     with pytest.raises(ValueError):
         Settings(chat_fallback_provider="fake")  # a fallback provider needs a model
+
+
+class _Msg:
+    def __init__(self, usage):
+        self.usage_metadata = usage
+
+
+class _ThinkingModel:
+    """A LangChain-shaped model whose structured calls report real usage, thinking tokens included."""
+
+    def with_structured_output(self, schema, include_raw=False):
+        assert include_raw, "real models must be asked for the raw message so usage is metered"
+
+        class _Runner:
+            async def ainvoke(self, messages):
+                usage = {"input_tokens": 120, "output_tokens": 95}  # 90 of them thinking
+                return {"raw": _Msg(usage), "parsed": schema(answer="ok"), "parsing_error": None}
+
+        return _Runner()
+
+
+class _Answer(BaseModel):
+    answer: str
+
+
+async def test_structured_calls_meter_real_usage_including_thinking_tokens():
+    from services.platform.egress.providers import FallbackChatModel
+    from services.platform.tracing import MemorySpanSink, Prices, trace_run
+
+    sink = MemorySpanSink()
+    chain = FallbackChatModel([("gemini:thinker", _ThinkingModel())])
+    client = EgressChatClient(chain)
+    prices = Prices({"thinker": {"in": 2.0, "out": 10.0}})
+    async with trace_run("records", "t1", sink, prices):
+        await client.ask_structured(ModelRequest(system="s", user="u", purpose="p"), _Answer)
+    [model_span] = [s for s in sink.spans if s.kind == "model"]
+    assert (model_span.tokens_in, model_span.tokens_out, model_span.tokens_estimated) == (120, 95, False)
+    assert model_span.name == "gemini:thinker"
+    assert model_span.cost == pytest.approx((120 * 2.0 + 95 * 10.0) / 1_000_000)
+
+
+def test_thinking_level_is_passed_to_gemini_per_tier():
+    settings = Settings(
+        _env_file=None,
+        chat_provider="gemini",
+        chat_model="big",
+        chat_small_model="small",
+        chat_api_key="k",
+        chat_small_thinking_level="low",
+    )
+    routes = build_model_routes(settings)
+    small = routes["small"].models[0][1]
+    large = routes["large"].models[0][1]
+    assert small.thinking_config == {"thinking_level": "low"}
+    assert large.thinking_config is None
+
+
+class _HangingModel:
+    """A provider that accepts the call and never answers (what a stuck HTTP request looks like)."""
+
+    async def ainvoke(self, messages):
+        import asyncio
+
+        await asyncio.sleep(3600)
+
+
+async def test_a_hung_provider_times_out_and_the_next_one_answers():
+    import time
+
+    from services.platform.egress.providers import FakeChatModel, FallbackChatModel
+
+    chain = FallbackChatModel([("primary", _HangingModel()), ("backup", FakeChatModel("ok"))], timeout=0.05)
+    start = time.perf_counter()
+    assert await chain.ainvoke([{"role": "user", "content": "hi"}]) == "ok"
+    assert chain.last_used == "backup"
+    assert time.perf_counter() - start < 1
+
+
+async def test_when_every_provider_hangs_the_caller_gets_model_unavailable_quickly():
+    from services.platform.egress.providers import FallbackChatModel
+
+    client = EgressChatClient(FallbackChatModel([("only", _HangingModel())], timeout=0.05))
+    with pytest.raises(ModelUnavailable):
+        await client.ask(ModelRequest(system="s", user="u", purpose="p"))
+
+
+def test_a_same_provider_fallback_reuses_the_primary_key_but_another_provider_needs_its_own():
+    same = Settings(
+        _env_file=None,
+        chat_provider="gemini",
+        chat_model="big",
+        chat_api_key="k",
+        chat_fallback_provider="gemini",
+        chat_fallback_model="other",
+    )
+    names = [name for name, _ in build_model_routes(same)["large"].models]
+    assert names == ["gemini:big", "gemini:other"]
+    other = Settings(
+        _env_file=None,
+        chat_provider="gemini",
+        chat_model="big",
+        chat_api_key="k",
+        chat_fallback_provider="openai",
+        chat_fallback_model="gpt",
+    )
+    with pytest.raises(ValueError, match="MEDPAL_CHAT_FALLBACK_API_KEY"):
+        build_model_routes(other)
