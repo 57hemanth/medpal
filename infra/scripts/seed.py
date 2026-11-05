@@ -16,6 +16,7 @@ import psycopg
 
 from data.synthetic.generate import OUT_DIR, write_outputs
 from infra.scripts.sample_records import ASHA_ANNUAL_CHECK, LATA_BLOOD_AND_KIDNEY, load_sample_records
+from services.pharmacy.classes import class_for
 from services.platform.config import get_settings
 
 # Load order follows foreign keys.
@@ -41,6 +42,7 @@ MOTHER_PATIENT, MOTHER_USER = "00000000-0000-0000-0000-0000000b0003", "00000000-
 DESK_USER = "00000000-0000-0000-0000-0000000e0003"
 DOCTOR_USER = "00000000-0000-0000-0000-0000000e0004"
 COMPLIANCE_USER = "00000000-0000-0000-0000-0000000e0006"
+PHARMACIST_USER = "00000000-0000-0000-0000-0000000e0007"
 
 
 def _copy(conn: psycopg.Connection, path: Path, table: str, columns: str) -> int:
@@ -87,14 +89,26 @@ def _identities(conn: psycopg.Connection) -> None:
     conn.execute(
         "INSERT INTO app_user (user_id, role, doctor_id) VALUES (%s, 'doctor', %s)", (DOCTOR_USER, doctor[0])
     )
+    # The doctor's clinic for the demo: where their earliest open slot is. The pharmacist works there too,
+    # so a note signed in the demo reserves its medicines where the pharmacist can see them.
+    clinic = conn.execute(
+        "SELECT clinic_id FROM slot WHERE doctor_id = %s AND starts_at > now() ORDER BY starts_at LIMIT 1",
+        (doctor[0],),
+    ).fetchone()[0]
+    conn.execute(
+        "INSERT INTO app_user (user_id, role, clinic_id) VALUES (%s, 'pharmacist', %s)",
+        (PHARMACIST_USER, clinic),
+    )
     # Three desk-booked consultations with that doctor, so the scribe can be tried more than once.
     for position, patient in enumerate((ROHAN_PATIENT, ASHA_PATIENT, MOTHER_PATIENT)):
         conn.execute(
             "INSERT INTO appointment (patient_id, slot_id, status, source, idempotency_key, created_by)"
             " SELECT %s, slot_id, 'booked', 'desk', %s, %s FROM slot"
-            " WHERE doctor_id = %s AND starts_at > now() ORDER BY starts_at OFFSET %s LIMIT 1",
-            (patient, f"seed-scribe-demo-{position}", DESK_USER, doctor[0], position),
+            " WHERE doctor_id = %s AND clinic_id = %s AND starts_at > now()"
+            " ORDER BY starts_at OFFSET %s LIMIT 1",
+            (patient, f"seed-scribe-demo-{position}", DESK_USER, doctor[0], clinic, position),
         )
+    _past_consultations(conn, doctor[0], clinic)
     # Lata grants her daughter Asha read access to her records for 180 days.
     now = datetime.now(UTC)
     conn.execute(
@@ -103,6 +117,121 @@ def _identities(conn: psycopg.Connection) -> None:
         " VALUES (%s, %s, '{records:read}', 'family care', %s, %s, %s)",
         (MOTHER_PATIENT, ASHA_USER, MOTHER_USER, now, now + timedelta(days=180)),
     )
+
+
+PAST_CONSULTATIONS = [
+    # (patient, days ago, transcript, SOAP, medicines, dispensed already)
+    (
+        ROHAN_PATIENT,
+        6,
+        "Doctor: Fever for three days with body ache and a runny nose? Patient: Yes, and a mild cough. "
+        "Doctor: Temperature 100.8 F, throat slightly red, chest clear. Take paracetamol 500 mg three times "
+        "a day for three days and cetirizine 10 mg at night for five days. Plenty of fluids.",
+        {
+            "subjective": "Fever, body ache and runny nose for three days; mild cough.",
+            "objective": "Temperature 100.8 F. Throat slightly red. Chest clear.",
+            "assessment": "Viral upper respiratory infection.",
+            "plan": "Paracetamol 500 mg three times a day for three days. Cetirizine 10 mg at night for five "
+            "days. Fluids and rest. Review if fever lasts beyond five days.",
+        },
+        ["Paracetamol", "Cetirizine"],
+        True,
+    ),
+    (
+        ASHA_PATIENT,
+        2,
+        "Doctor: Burning in the stomach after meals for two weeks? Patient: Yes, and sometimes nausea. "
+        "Doctor: Pantoprazole 40 mg every morning before breakfast for two weeks, and ondansetron 4 mg if "
+        "nauseous. Cut down on tea and late dinners.",
+        {
+            "subjective": "Burning epigastric pain after meals for two weeks; occasional nausea.",
+            "objective": "Abdomen soft, mild epigastric tenderness.",
+            "assessment": "Acid peptic symptoms.",
+            "plan": "Pantoprazole 40 mg before breakfast for two weeks. Ondansetron 4 mg if nauseous. "
+            "Less tea, earlier dinners. Follow up in two weeks.",
+        },
+        ["Pantoprazole", "Ondansetron"],
+        False,
+    ),
+    (
+        MOTHER_PATIENT,
+        1,
+        "Doctor: Your blood pressure today is 152 over 94, and it was high last time too. Patient: I get "
+        "headaches some evenings. Doctor: Start amlodipine 5 mg once daily. Less salt, a daily walk, and "
+        "check BP at home. Review in four weeks.",
+        {
+            "subjective": "Occasional evening headaches.",
+            "objective": "BP 152/94, raised on two visits.",
+            "assessment": "Hypertension.",
+            "plan": "Amlodipine 5 mg once daily. Low-salt diet, daily walk, home BP log. "
+            "Review in four weeks.",
+        },
+        ["Amlodipine"],
+        False,
+    ),
+]
+
+
+def _past_consultations(conn: psycopg.Connection, doctor_id: object, clinic_id: object) -> None:
+    """Signed consultations from the last week, so notes, prescriptions and the pharmacy queue have history.
+
+    Written with the owner role (the seed is not a user). Prescriptions go through the same trigger as a
+    real signature, so each is reserved at the clinic if stock allows.
+    """
+    import json
+    import uuid
+
+    from services.scribe.service import content_hash
+
+    for patient, days_ago, transcript, soap, medicines, dispensed in PAST_CONSULTATIONS:
+        soap = {**soap, "medicines": medicines}
+        slot_id, appt_id, encounter_id, note_id = (str(uuid.uuid4()) for _ in range(4))
+        when = datetime.now(UTC).replace(hour=5, minute=0, second=0, microsecond=0) - timedelta(days=days_ago)
+        conn.execute(
+            "INSERT INTO slot (slot_id, doctor_id, clinic_id, starts_at, capacity, synthetic)"
+            " VALUES (%s, %s, %s, %s, 1, true)",
+            (slot_id, doctor_id, clinic_id, when),
+        )
+        conn.execute(
+            "INSERT INTO appointment (appt_id, patient_id, slot_id, status, source, idempotency_key,"
+            " created_by) VALUES (%s, %s, %s, 'attended', 'desk', %s, %s)",
+            (appt_id, patient, slot_id, f"seed-past-{appt_id}", DESK_USER),
+        )
+        conn.execute(
+            "INSERT INTO encounter (encounter_id, appt_id, patient_id, doctor_id, started_at, transcript)"
+            " VALUES (%s, %s, %s, %s, %s, %s)",
+            (encounter_id, appt_id, patient, doctor_id, when, transcript),
+        )
+        conn.execute(
+            "INSERT INTO note_version (note_id, version, encounter_id, patient_id, doctor_id, soap_json,"
+            " draft_json, edit_history, content_hash, signed_by, signed_at)"
+            " VALUES (%s, 1, %s, %s, %s, %s, %s, '[]', %s, %s, %s)",
+            (
+                note_id,
+                encounter_id,
+                patient,
+                doctor_id,
+                json.dumps(soap),
+                json.dumps(soap),
+                content_hash(soap),
+                DOCTOR_USER,
+                when + timedelta(minutes=15),
+            ),
+        )
+        for medicine in medicines:
+            conn.execute(
+                "INSERT INTO prescription (note_id, note_version, patient_id, medicine_id, medicine_text,"
+                " dose, substitute_ok, set_by)"
+                " SELECT %s, 1, %s, medicine_id, %s, 'as written in the signed note', false, %s"
+                " FROM medicine WHERE name = %s",
+                (note_id, patient, medicine, DOCTOR_USER, medicine),
+            )
+        if dispensed:
+            conn.execute(
+                "UPDATE medicine_reservation SET status = 'dispensed', closed_at = %s, closed_by = %s"
+                " WHERE rx_id IN (SELECT rx_id FROM prescription WHERE note_id = %s)",
+                (when + timedelta(hours=1), PHARMACIST_USER, note_id),
+            )
 
 
 def main() -> None:
@@ -117,6 +246,11 @@ def main() -> None:
         counts = {table: _copy(conn, OUT_DIR / file, table, cols) for file, table, cols in TABLES}
         # Stock arrives as a nightly feed: stamp it as this morning's, so freshness flags are meaningful.
         conn.execute("UPDATE medicine_stock SET as_of = date_trunc('day', now()) + interval '6 hours'")
+        for name, composition in conn.execute("SELECT name, composition FROM medicine").fetchall():
+            conn.execute(
+                "UPDATE medicine SET therapeutic_class = %s WHERE name = %s",
+                (class_for(name) or class_for(composition), name),
+            )
         _identities(conn)
     # Sample reports go through the real upload path (validation, privacy scan, storage, indexing).
     reports = asyncio.run(
@@ -130,7 +264,10 @@ def main() -> None:
     )
     print("loaded:", ", ".join(f"{t}={n:,}" for t, n in counts.items()), f"sample reports={reports}")
     print("dev identities: Asha (patient + caregiver for her mother Lata), Rohan, desk, doctor, compliance")
-    print("the doctor has three consultations (Rohan, Asha, Lata) ready for the scribe")
+    print(
+        "the doctor has three consultations (Rohan, Asha, Lata) ready for the scribe, and three signed ones"
+    )
+    print("the pharmacist works at the doctor's clinic; past prescriptions are reserved or dispensed there")
     print("sample reports: Asha's annual health check (3 pages), Lata's blood count and kidney function")
     print(
         "try: curl -s localhost:8000/triage -H 'content-type: application/json' "
