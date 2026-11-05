@@ -138,7 +138,10 @@ export function RecordsPage() {
         }
       />
       <div className="grid items-start gap-6 xl:grid-cols-[300px_minmax(0,1fr)]">
-        <aside id="record-library" className="order-2 space-y-5 xl:order-1">
+        <aside
+          id="record-library"
+          className="order-2 space-y-5 xl:order-1 xl:max-h-[max(calc(100dvh-220px),480px)] xl:overflow-y-auto xl:pr-1"
+        >
           {auth.role === 'patient' && (
             <div className="panel p-5">
               <h2 className="text-sm font-semibold">Add a health record</h2>
@@ -254,7 +257,7 @@ export function RecordsPage() {
             </PrivacyNote>
           </div>
         </aside>
-        <div className="panel order-1 min-w-0 overflow-hidden xl:order-2">
+        <div className="panel order-1 min-w-0 overflow-hidden xl:order-2 flex flex-col [&>*]:shrink-0 xl:h-[calc(100dvh-220px)] xl:min-h-[480px]">
           <div className="flex items-center justify-between gap-3 border-b border-line px-5 py-4">
             <div className="flex items-center gap-3">
               <span className="flex size-9 items-center justify-center rounded-xl bg-brand-700 text-white">
@@ -275,7 +278,7 @@ export function RecordsPage() {
             aria-label="Records conversation"
             aria-live="polite"
             aria-relevant="additions"
-            className="h-[280px] sm:h-[clamp(320px,calc(100dvh-560px),500px)] space-y-7 overflow-y-auto px-5 py-7 sm:px-7"
+            className="h-[280px] min-h-0 space-y-7 overflow-y-auto px-5 py-7 sm:h-[clamp(320px,calc(100dvh-560px),500px)] sm:px-7 xl:h-auto xl:flex-1!"
           >
             <div className="flex gap-3">
               <span className="flex size-8 shrink-0 items-center justify-center rounded-xl bg-brand-700 text-white">
