@@ -93,7 +93,7 @@ class Specialists(Protocol):
         self, auth: AuthContext, *, encounter_id: str, transcript: str, thread_id: str
     ) -> dict[str, Any]: ...
 
-    async def visit(self, auth: AuthContext, *, thread_id: str) -> dict[str, Any]:
+    async def visit(self, auth: AuthContext, *, thread_id: str, question: str) -> dict[str, Any]:
         """Answer about the appointment found or booked earlier in this conversation, from saved state."""
         ...
 
@@ -316,7 +316,9 @@ def build_supervisor_graph(specialists: Specialists, planner: Planner | None = N
             if task["specialist"] == "triage":
                 result = await specialists.triage(auth, text=task["request"], thread_id=delegation_id)
             elif task["specialist"] == "visit":
-                result = await specialists.visit(auth, thread_id=state["conversation_thread_id"] or "")
+                result = await specialists.visit(
+                    auth, thread_id=state["conversation_thread_id"] or "", question=task["request"]
+                )
             elif task["specialist"] == "records":
                 result = await specialists.records(
                     auth,

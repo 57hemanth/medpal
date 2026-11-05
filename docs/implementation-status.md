@@ -25,7 +25,7 @@ Run on 3 November 2026 against a live local stack, with Gemini: `gemini-4-argon`
 
 | Check | Result |
 |---|---|
-| Unit tests | 231 passed |
+| Unit tests | 240 passed |
 | Data tests | 64 passed |
 | Web tests and production build | 9 passed; build clean |
 | Lint, format, mypy, module-boundary contracts | clean |

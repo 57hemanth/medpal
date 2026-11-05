@@ -176,6 +176,8 @@ screen ──(patient emergency)────────────────
   endpoint (`/triage/{thread_id}/resume`, `/api/scribe/sessions/{thread_id}/resume`).
 - Follow-ups such as "which doctor?" go to a `visit` specialist that reads the chat's own triage run
   (the client sends its thread id); it uses no model, and only the run's owner gets an answer.
+  The question decides which facts are stated (`services/agent/supervisor/visit.py`): "what is the
+  doctor's specialization?" gets the specialty and what it covers, "when?" the time, "where?" the clinic.
 - Each delegation is audited with the specialist's thread id and the supervisor's trace id, and all
   nodes, supervisor and specialist, land in one trace.
 

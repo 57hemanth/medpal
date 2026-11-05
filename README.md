@@ -49,7 +49,7 @@ MedPal automates the routine parts and keeps humans in charge of every decision 
 | Verified against a real model (Gemini): answers, refusals, routing, drafts, fallback, cost | ✅ `make live-check` |
 | Local speech-to-text | 🟡 adapter and upload UI; local model provisioning required |
 
-**Tests:** 231 unit · 64 data · 61 integration (real Postgres) · 9 frontend · 40 real-model checks · evaluation gates · lint, type checks and module-boundary contracts. See [implementation status](docs/implementation-status.md) for what has been verified against a live stack.
+**Tests:** 240 unit · 64 data · 61 integration (real Postgres) · 9 frontend · 40 real-model checks · evaluation gates · lint, type checks and module-boundary contracts. See [implementation status](docs/implementation-status.md) for what has been verified against a live stack.
 
 ## Quick start
 

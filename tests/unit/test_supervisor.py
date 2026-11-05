@@ -57,8 +57,8 @@ class FakeSpecialists:
             raise RuntimeError("boom")
         return {"status": "answered", "reply": "Your LDL was 162 mg/dL.", "citations": [{"page": 1}]}
 
-    async def visit(self, auth, *, thread_id):
-        self.calls.append(("visit", {"thread_id": thread_id}))
+    async def visit(self, auth, *, thread_id, question):
+        self.calls.append(("visit", {"thread_id": thread_id, "question": question}))
         return {"status": "booked", "reply": "Your appointment is with Dr Ranade, Orthopaedics."}
 
     async def scribe(self, auth, *, encounter_id, transcript, thread_id):

@@ -12,6 +12,7 @@ from pydantic import BaseModel, Field
 
 from services.agent.supervisor.graph import build_supervisor_graph
 from services.agent.supervisor.planner import ModelPlanner
+from services.agent.supervisor.visit import SPECIALTY_ABOUT, VisitFacts, answer_visit, asked_for
 from services.api.deps import auth_ctx
 from services.api.routers.scribe import _session_out
 from services.api.routers.triage import _to_out
@@ -121,9 +122,10 @@ class AppSpecialists:
         session = _session_out(thread_id, out).model_dump()
         return {**session, "reply": "A draft note is ready for your review."}
 
-    async def visit(self, auth: AuthContext, *, thread_id: str) -> dict[str, Any]:
-        """Facts about this chat's appointment, read from the triage run's saved state. No model, so
-        nothing can be invented; only the caller's own run is readable."""
+    async def visit(self, auth: AuthContext, *, thread_id: str, question: str) -> dict[str, Any]:
+        """Facts about this chat's appointment, read from the triage run's saved state and stated by
+        code (services/agent/supervisor/visit.py). No model writes the reply; only the caller's own run
+        is readable."""
         snapshot = await self._state.triage_graph.aget_state({"configurable": {"thread_id": thread_id}})
         values = snapshot.values or {}
         if values.get("auth", {}).get("user_id") != auth["user_id"]:
@@ -132,20 +134,23 @@ class AppSpecialists:
         candidates = values.get("candidates") or []
         chosen = next((c for c in candidates if c["slot_id"] == values.get("chosen_slot_id")), None)
         if values.get("booking_id") and chosen:
-            reference = str(values["booking_id"])[:8].upper()
-            reply = (
-                f"Your appointment is with {chosen['doctor_name']}"
-                + (f", {specialty}" if specialty else "")
-                + f", at {chosen['clinic_name']} on {chosen['display_time']} IST."
-                + f" Booking reference {reference}."
+            facts = VisitFacts(
+                doctor=chosen["doctor_name"],
+                specialty=specialty,
+                clinic=chosen["clinic_name"],
+                time=chosen["display_time"],
+                reference=str(values["booking_id"])[:8].upper(),
             )
-            return {"status": "booked", "reply": reply, "thread_id": thread_id}
+            return {"status": "booked", "reply": answer_visit(question, facts), "thread_id": thread_id}
         if candidates:
             names = ", ".join(c["doctor_name"] for c in candidates)
             reply = (
                 f"I found {len(candidates)} {specialty or ''} options: {names}. Choose one above to book it."
-            ).replace("  ", " ")
-            return {"status": "options", "reply": reply, "thread_id": thread_id}
+            )
+            about = SPECIALTY_ABOUT.get(specialty or "")
+            if about and "specialty" in asked_for(question):
+                reply = f"They are {specialty} specialists: {about}. " + reply
+            return {"status": "options", "reply": " ".join(reply.split()), "thread_id": thread_id}
         if values.get("outcome") == "emergency":
             return {"status": "emergency", "reply": "This conversation was passed to the emergency desk."}
         return {"status": "not_found", "reply": "Nothing has been booked in this conversation yet."}
