@@ -7,7 +7,7 @@ from pydantic import BaseModel
 
 from services.api.deps import auth_ctx
 from services.platform.auth import AuthContext
-from services.records.ingest import UploadRejected
+from services.records.ingest import MAX_UPLOAD_BYTES, UploadRejected
 from services.records.qa import answer_question
 from services.records.service import ingest_record, list_records, upload_record
 
@@ -60,7 +60,7 @@ async def upload(
 ) -> UploadOut:
     if auth["role"] != "patient":
         raise HTTPException(status.HTTP_403_FORBIDDEN, "records upload is available to patients first")
-    content = await file.read()
+    content = await file.read(MAX_UPLOAD_BYTES + 1)
     try:
         uploaded_record = await upload_record(
             request.app.state.app_pool,

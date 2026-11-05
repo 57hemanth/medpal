@@ -15,11 +15,11 @@ def test_text_upload_extracts_and_chunks_without_local_files():
     assert chunk_text(extracted.text) == ["LDL 162 mg/dL\n\nHbA1c 6.8 percent"]
 
 
-def test_pdf_without_extractor_is_parked_for_review():
+def test_invalid_pdf_is_parked_for_review():
     extracted = extract_text(b"%PDF-1.7", "application/pdf")
 
     assert extracted.status == "needs_review"
-    assert extracted.error == "ocr_unavailable"
+    assert extracted.error == "invalid_document"
     assert extracted.text is None
 
 

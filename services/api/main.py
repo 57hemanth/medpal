@@ -16,7 +16,8 @@ from services.api.routers import consent, me, ops, records, scribe, triage
 from services.platform.config import get_settings
 from services.platform.db import app_pool, checkpoint_pool
 from services.platform.egress import EgressChatClient, build_chat_model
-from services.records.storage import MemoryObjectStore
+from services.records.storage import build_object_store
+from services.scribe.speech import LocalSpeechTranscriber
 
 STATIC_DIR = next((path for path in (Path("static"), Path("web/dist")) if path.exists()), None)
 
@@ -31,7 +32,8 @@ async def _postgres_lifespan(app: FastAPI) -> AsyncIterator[None]:
         saver = AsyncPostgresSaver(cp_pool)  # type: ignore[arg-type]
         await saver.setup()  # idempotent; creates checkpoint tables in the langgraph schema
         app.state.app_pool = pool
-        app.state.object_store = MemoryObjectStore(settings.object_store_bucket)
+        app.state.object_store = build_object_store(settings)
+        app.state.speech_transcriber = LocalSpeechTranscriber(settings.speech_model_path)
         app.state.chat_client = EgressChatClient(build_chat_model(settings))
         app.state.triage_graph = build_triage_graph(PgTriageTools(pool)).compile(checkpointer=saver)
         yield
@@ -60,6 +62,10 @@ def create_app(*, triage_graph: Any | None = None) -> FastAPI:
     app.include_router(scribe.router)
     app.include_router(ops.router)
 
+    @app.get("/healthz", tags=["ops"])
+    async def healthz() -> dict[str, str]:
+        return {"status": "ok"}
+
     if STATIC_DIR is not None:
         app.mount("/assets", StaticFiles(directory=STATIC_DIR / "assets"), name="assets")
 
@@ -70,10 +76,6 @@ def create_app(*, triage_graph: Any | None = None) -> FastAPI:
             if "text/html" not in request.headers.get("accept", ""):
                 raise HTTPException(status_code=404)
             return HTMLResponse((STATIC_DIR / "index.html").read_text())
-
-    @app.get("/healthz", tags=["ops"])
-    async def healthz() -> dict[str, str]:
-        return {"status": "ok"}
 
     return app
 

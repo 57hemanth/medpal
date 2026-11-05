@@ -26,6 +26,13 @@ dependencies = [
     "sqlalchemy>=2",
     "tenacity>=8.2.3,<9.2.0",
     "uvicorn[standard]>=0.54.0",
+    "boto3>=1.43.123",
+    "pypdf>=6.21.4",
+]
+
+[project.optional-dependencies]
+speech = [
+    "faster-whisper>=1.2.1",
 ]
 
 [tool.uv]

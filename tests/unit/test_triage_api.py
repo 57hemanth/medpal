@@ -79,3 +79,19 @@ async def test_non_patient_cannot_start_triage_yet(client):
     desk = {"X-Dev-User-Id": "u-meena", "X-Dev-Role": "desk"}
     r = await client.post("/triage", json={"text": "knee pain"}, headers=desk)
     assert r.status_code == 403
+
+
+async def test_health_endpoint_is_not_shadowed_by_spa(monkeypatch, tmp_path):
+    import services.api.main as main
+
+    (tmp_path / "assets").mkdir()
+    (tmp_path / "index.html").write_text("<html>MedPal</html>")
+    monkeypatch.setattr(main, "STATIC_DIR", tmp_path)
+    app = main.create_app(triage_graph=object())
+    async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://test") as client:
+        health = await client.get("/healthz")
+        assert health.status_code == 200
+        assert health.json() == {"status": "ok"}
+        page = await client.get("/", headers={"accept": "text/html"})
+        assert page.status_code == 200
+        assert "MedPal" in page.text

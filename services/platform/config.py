@@ -35,6 +35,11 @@ class Settings(BaseSettings):
     chat_base_url: str | None = None
     chat_temperature: float = 0.0
 
+    speech_model_path: str | None = None
+
+    object_store_backend: Literal["file", "s3", "memory"] = "file"
+    object_store_directory: str = ".medpal/objects"
+    object_store_region: str = "ap-south-1"
     object_store_bucket: str = "medpal-records"
     object_store_endpoint_url: str | None = None
     object_store_access_key_id: str | None = None
@@ -46,6 +51,8 @@ class Settings(BaseSettings):
             raise ValueError("auth_mode=dev is not allowed when env=prod")
         if self.env == "prod" and self.chat_provider == "fake":
             raise ValueError("chat_provider=fake is not allowed when env=prod")
+        if self.env == "prod" and self.object_store_backend != "s3":
+            raise ValueError("production requires object_store_backend=s3")
         return self
 
     @property

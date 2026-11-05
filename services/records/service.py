@@ -1,5 +1,6 @@
 """Records upload, ingest status and chunk creation."""
 
+import asyncio
 import hashlib
 from dataclasses import dataclass
 from typing import Any, cast
@@ -43,18 +44,21 @@ async def upload_record(
 ) -> UploadedRecord:
     if auth["acting_for_patient_id"] != patient_id:
         raise PermissionError("cannot upload for a different patient")
-    validate_upload(content, content_type)
+    await asyncio.to_thread(validate_upload, content, content_type)
     digest = hashlib.sha256(content).hexdigest()
-    key = f"patients/{patient_id}/records/{digest}/{filename}"
+    key = f"patients/{patient_id}/records/{digest}"
     uri = await store.put(key, content, content_type)
     async with scoped(pool, auth) as conn:
+        await conn.execute(
+            "INSERT INTO document (patient_id, type, uri, sha256, uploaded_by)"
+            " VALUES (%s, 'other', %s, %s, %s)"
+            " ON CONFLICT (patient_id, sha256) DO NOTHING",
+            (patient_id, uri, digest, auth["user_id"]),
+        )
         doc = await _one(
             await conn.execute(
-                "INSERT INTO document (patient_id, type, uri, sha256, uploaded_by)"
-                " VALUES (%s, 'other', %s, %s, %s)"
-                " ON CONFLICT (patient_id, sha256) DO UPDATE SET uploaded_at = document.uploaded_at"
-                " RETURNING doc_id::text, sha256",
-                (patient_id, uri, digest, auth["user_id"]),
+                "SELECT doc_id::text, sha256 FROM document WHERE patient_id = %s AND sha256 = %s",
+                (patient_id, digest),
             )
         )
         job = await _one(
@@ -80,7 +84,7 @@ async def ingest_record(pool: AsyncConnectionPool, store: ObjectStore, *, doc_id
     async with scoped_system(pool) as conn:
         doc = await _one(
             await conn.execute(
-                "SELECT doc_id::text, patient_id::text, uri FROM document WHERE doc_id = %s",
+                "SELECT doc_id::text, patient_id::text, uri FROM document WHERE doc_id = %s FOR UPDATE",
                 (doc_id,),
             )
         )
@@ -90,19 +94,31 @@ async def ingest_record(pool: AsyncConnectionPool, store: ObjectStore, *, doc_id
         )
         content = await store.get(doc["uri"])
         content_type = "application/pdf" if content.startswith(b"%PDF") else "text/plain"
-        extracted = extract_text(content, content_type)
+        extracted = await asyncio.to_thread(extract_text, content, content_type)
         if extracted.text is None:
             await conn.execute(
                 "UPDATE ingest_job SET status = %s, error = %s, updated_at = now() WHERE doc_id = %s",
                 (extracted.status, extracted.error, doc_id),
             )
             return extracted.status
-        for ordinal, chunk in enumerate(chunk_text(extracted.text)):
-            await conn.execute(
-                "INSERT INTO doc_chunk (doc_id, patient_id, page, ordinal, text, embedding)"
-                " VALUES (%s, %s, 1, %s, %s, %s::vector)",
-                (doc["doc_id"], doc["patient_id"], ordinal, chunk, pgvector_literal(embed_text(chunk))),
-            )
+        # Immutable content-addressed uploads make identical ingest retries safe.
+        ordinal = 0
+        for page, text in enumerate(extracted.pages or (extracted.text,), 1):
+            for chunk in chunk_text(text):
+                await conn.execute(
+                    "INSERT INTO doc_chunk (doc_id, patient_id, page, ordinal, text, embedding)"
+                    " VALUES (%s, %s, %s, %s, %s, %s::vector)"
+                    " ON CONFLICT (doc_id, page, ordinal) DO NOTHING",
+                    (
+                        doc["doc_id"],
+                        doc["patient_id"],
+                        page,
+                        ordinal,
+                        chunk,
+                        pgvector_literal(embed_text(chunk)),
+                    ),
+                )
+                ordinal += 1
         await conn.execute("UPDATE document SET phi_status = 'tagged' WHERE doc_id = %s", (doc_id,))
         await conn.execute(
             "UPDATE ingest_job SET status = 'ready', error = NULL, updated_at = now() WHERE doc_id = %s",
