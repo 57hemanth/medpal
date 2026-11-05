@@ -50,7 +50,7 @@ class FakeSpecialists:
             return {"status": "emergency", "thread_id": thread_id, "reply": "Call 112 now."}
         return {"status": "awaiting_safety_check", "thread_id": thread_id, "reply": "Safety questions first."}
 
-    async def records(self, auth, *, question, patient_id, encounter_id):
+    async def records(self, auth, *, question, patient_id, encounter_id, trace_id):
         self.calls.append(("records", {"question": question, "patient_id": patient_id}))
         await self._arrive()
         if self.fail == "records":
@@ -212,6 +212,11 @@ async def test_supervisor_nodes_are_traced_under_one_trace_without_message_text(
 
 def test_clauses_split_on_sentences_and_new_questions_but_not_symptom_lists():
     assert split_clauses("knee pain and swelling") == ["knee pain and swelling"]
+    assert split_clauses("pet mein jalan hai, aur mera vitamin D kitna tha?") == [
+        "pet mein jalan hai",
+        "mera vitamin D kitna tha?",
+    ]
+    assert split_clauses("sir dard aur bukhar hai") == ["sir dard aur bukhar hai"]
     assert split_clauses("fever since monday and what was my hba1c") == [
         "fever since monday",
         "what was my hba1c",

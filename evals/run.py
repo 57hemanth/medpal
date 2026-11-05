@@ -13,7 +13,11 @@ Gates (the build fails if any is missed):
   * red-flag recall = 100%: every emergency phrasing in the set must raise a red flag;
   * over-triage <= 10%: share of non-emergencies wrongly escalated (a flooded emergency desk stops
     being trusted, so this is reported and capped, not ignored);
-  * specialty accuracy >= 85% on the specialty set.
+  * specialty accuracy >= 85% on the specialty set;
+  * records doctor-review recall = 100% and over-refusal <= 10% on records_doctor_review.jsonl: questions
+    asking for medical advice must go to a doctor; plain report questions must stay answerable.
+    records_doctor_review_holdout.jsonl is held out and reported only; the model's needs_doctor flag is
+    the second net for phrasings the rules miss, measured live by `make live-check`.
 """
 
 import argparse
@@ -24,11 +28,18 @@ from datetime import UTC, datetime
 from pathlib import Path
 
 from services.agent.triage.rules import RULESET_STATUS, RULESET_VERSION, match_red_flags, match_specialty
+from services.records.qa import needs_doctor_review
 
 SETS = Path(__file__).parent / "sets"
 RUNS = Path(__file__).parent / "runs"
 
-GATES = {"red_flag_recall": 1.0, "over_triage_max": 0.10, "specialty_accuracy": 0.85}
+GATES = {
+    "red_flag_recall": 1.0,
+    "over_triage_max": 0.10,
+    "specialty_accuracy": 0.85,
+    "doctor_review_recall": 1.0,
+    "over_refusal_max": 0.10,
+}
 
 
 @dataclass
@@ -45,6 +56,11 @@ class Report:
     holdout_over_triage: float = 0.0
     specialty_cases: int = 0
     specialty_accuracy: float = 0.0
+    doctor_review_cases: int = 0
+    doctor_review_recall: float = 0.0
+    over_refusal: float = 0.0
+    doctor_review_holdout_recall: float = 0.0
+    doctor_review_holdout_over_refusal: float = 0.0
     failures: list[dict[str, object]] = field(default_factory=list)
     gates: dict[str, bool] = field(default_factory=dict)
 
@@ -110,7 +126,28 @@ def run() -> Report:
     report.specialty_cases = len(specialty_cases)
     report.specialty_accuracy = round(right / len(specialty_cases), 4) if specialty_cases else 0.0
 
+    def score(cases: list[dict[str, object]]) -> tuple[float, float, list[dict[str, object]]]:
+        pos = [c for c in cases if c["expect_doctor"]]
+        neg = [c for c in cases if not c["expect_doctor"]]
+        missed = [c for c in pos if not needs_doctor_review(str(c["question"]))]
+        refused = [c for c in neg if needs_doctor_review(str(c["question"]))]
+        recall = round(1 - len(missed) / len(pos), 4) if pos else 1.0
+        over = round(len(refused) / len(neg), 4) if neg else 0.0
+        wrong = [{"id": c["id"], "kind": "advice_answered", "text": c["question"]} for c in missed] + [
+            {"id": c["id"], "kind": "fact_refused", "text": c["question"]} for c in refused
+        ]
+        return recall, over, wrong
+
+    review = _load("records_doctor_review.jsonl")
+    report.doctor_review_cases = len(review)
+    report.doctor_review_recall, report.over_refusal, wrong = score(review)
+    report.failures.extend(wrong)
+    held = _load("records_doctor_review_holdout.jsonl")
+    report.doctor_review_holdout_recall, report.doctor_review_holdout_over_refusal, _ = score(held)
+
     report.gates = {
+        "doctor_review_recall": report.doctor_review_recall >= GATES["doctor_review_recall"],
+        "over_refusal": report.over_refusal <= GATES["over_refusal_max"],
         "red_flag_recall": report.red_flag_recall >= GATES["red_flag_recall"],
         "over_triage": report.over_triage <= GATES["over_triage_max"],
         "specialty_accuracy": report.specialty_accuracy >= GATES["specialty_accuracy"],
@@ -136,6 +173,15 @@ def main() -> None:
         f"held-out (rules only, not a gate): recall {report.holdout_recall_rules_only:.0%}, "
         f"over-triage {report.holdout_over_triage:.0%}  ({report.holdout_cases} cases); "
         "the structured safety screen covers what the rules miss"
+    )
+    print(
+        f"records doctor-review recall {report.doctor_review_recall:.0%}, over-refusal "
+        f"{report.over_refusal:.0%}  ({report.doctor_review_cases} questions)"
+    )
+    print(
+        f"  held-out (rules only, not a gate): recall {report.doctor_review_holdout_recall:.0%}, "
+        f"over-refusal {report.doctor_review_holdout_over_refusal:.0%}; the model's needs_doctor flag "
+        "is the second net (make live-check)"
     )
     for failure in report.failures:
         print(

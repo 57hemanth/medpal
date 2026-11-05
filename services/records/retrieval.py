@@ -1,5 +1,6 @@
 """Hybrid records retrieval scoped by Postgres RLS."""
 
+import re
 from dataclasses import dataclass
 from typing import Any, cast
 
@@ -22,6 +23,124 @@ class RetrievedChunk:
     score: float
 
 
+# Words that carry no meaning for matching a report (English and romanised Hindi question fillers).
+_STOP = frozenset(
+    [
+        "a",
+        "an",
+        "the",
+        "my",
+        "me",
+        "i",
+        "is",
+        "was",
+        "were",
+        "are",
+        "am",
+        "be",
+        "been",
+        "what",
+        "whats",
+        "when",
+        "which",
+        "who",
+        "how",
+        "much",
+        "many",
+        "do",
+        "does",
+        "did",
+        "of",
+        "in",
+        "on",
+        "at",
+        "for",
+        "to",
+        "from",
+        "and",
+        "or",
+        "with",
+        "about",
+        "tell",
+        "show",
+        "give",
+        "please",
+        "can",
+        "could",
+        "you",
+        "your",
+        "this",
+        "that",
+        "it",
+        "last",
+        "latest",
+        "recent",
+        "report",
+        "reports",
+        "result",
+        "results",
+        "test",
+        "tests",
+        "value",
+        "level",
+        "levels",
+        "mera",
+        "meri",
+        "mere",
+        "mujhe",
+        "kya",
+        "tha",
+        "thi",
+        "the",
+        "hai",
+        "hain",
+        "ka",
+        "ki",
+        "ke",
+        "ko",
+        "se",
+        "mein",
+        "me",
+        "aur",
+        "batao",
+        "bataiye",
+        "kitna",
+        "kitni",
+        "kab",
+    ]
+)
+# How people ask vs how reports are written. Deterministic, in-boundary, and easy to review.
+_LAY_TERMS: dict[str, tuple[str, ...]] = {
+    "sugar": ("glucose", "hba1c", "diabetes"),
+    "diabetes": ("glucose", "hba1c"),
+    "cholesterol": ("ldl", "hdl", "lipid", "triglycerides"),
+    "fat": ("lipid", "triglycerides"),
+    "thyroid": ("tsh", "t3", "t4"),
+    "blood": ("haemoglobin", "hemoglobin", "cbc"),
+    "khoon": ("haemoglobin", "hemoglobin", "cbc"),
+    "kidney": ("creatinine", "urea", "egfr"),
+    "liver": ("alt", "ast", "sgpt", "sgot", "bilirubin"),
+    "iron": ("ferritin", "haemoglobin"),
+    "bp": ("pressure",),
+    "heart": ("ecg", "cardiac"),
+}
+
+
+def lexical_query(question: str) -> str:
+    """An OR full-text query of the question's meaningful words plus clinical synonyms.
+
+    Tokens are reduced to [a-z0-9] before they reach to_tsquery, so nothing in the question can alter the
+    query's structure. Returns "" when nothing meaningful is left (the vector score still ranks).
+    """
+    words = [w for w in re.findall(r"[a-z0-9]+", question.lower()) if w not in _STOP and len(w) > 1]
+    terms: list[str] = []
+    for word in words:
+        for term in (word, *_LAY_TERMS.get(word, ())):
+            if term not in terms:
+                terms.append(term)
+    return " | ".join(terms[:24])
+
+
 async def retrieve(
     pool: AsyncConnectionPool,
     auth: AuthContext,
@@ -42,7 +161,7 @@ async def retrieve(
             await conn.execute(
                 """
                 WITH q AS (
-                    SELECT plainto_tsquery('simple', %s) AS tsq, %s::vector AS embedding
+                    SELECT to_tsquery('simple', %s) AS tsq, %s::vector AS embedding
                 )
                 SELECT c.chunk_id::text, c.doc_id::text, c.patient_id::text, c.page, c.ordinal, c.text,
                        (
@@ -55,7 +174,7 @@ async def retrieve(
                  ORDER BY score DESC, c.page, c.ordinal
                  LIMIT %s
                 """,
-                (question, query_embedding, patient_id, patient_id, limit),
+                (lexical_query(question), query_embedding, patient_id, patient_id, limit),
             )
         ).fetchall()
     return [RetrievedChunk(**cast(dict[str, Any], row)) for row in rows]

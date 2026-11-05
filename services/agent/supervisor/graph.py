@@ -79,7 +79,13 @@ class Specialists(Protocol):
     async def triage(self, auth: AuthContext, *, text: str, thread_id: str) -> dict[str, Any]: ...
 
     async def records(
-        self, auth: AuthContext, *, question: str, patient_id: str | None, encounter_id: str | None
+        self,
+        auth: AuthContext,
+        *,
+        question: str,
+        patient_id: str | None,
+        encounter_id: str | None,
+        trace_id: str,
     ) -> dict[str, Any]: ...
 
     async def scribe(
@@ -106,7 +112,9 @@ class SupervisorState(TypedDict, total=False):
 
 _SPLIT = re.compile(
     r"(?<=[.?!;])\s+|\n+|\s+(?:and also|also|plus)\s+"
-    r"|,?\s+and\s+(?=(?:what|can|could|when|how|is|are|do|does|did|please|show|tell)\b)",
+    r"|,?\s+and\s+(?=(?:what|can|could|when|how|is|are|do|does|did|please|show|tell)\b)"
+    # Hinglish: "…khane ke baad, aur mera vitamin D kitna tha?" ("and my vitamin D…")
+    r"|,\s*aur\s+|\s+aur\s+(?=(?:mera|meri|mere|kya|kitna|kitni|kab|batao)\b)",
     re.I,
 )
 _RECORDS = re.compile(
@@ -279,6 +287,7 @@ def build_supervisor_graph(specialists: Specialists, planner: Planner | None = N
                     question=task["request"],
                     patient_id=state["patient_id"],
                     encounter_id=state["encounter_id"],
+                    trace_id=state["trace_id"],
                 )
             else:
                 result = await specialists.scribe(

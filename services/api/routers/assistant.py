@@ -78,14 +78,25 @@ class AppSpecialists:
         return _to_out(thread_id, out).model_dump()
 
     async def records(
-        self, auth: AuthContext, *, question: str, patient_id: str | None, encounter_id: str | None
+        self,
+        auth: AuthContext,
+        *,
+        question: str,
+        patient_id: str | None,
+        encounter_id: str | None,
+        trace_id: str,
     ) -> dict[str, Any]:
         if auth["role"] == "doctor":
             patient_id = await self._encounter_patient(auth, encounter_id)
             if patient_id is None:
                 return {"status": "patient_required", "reply": "Open one of your consultations first."}
         result = await answer_question(
-            self._state.app_pool, self._state.chat_client, auth, question=question, patient_id=patient_id
+            self._state.app_pool,
+            self._state.chat_client,
+            auth,
+            question=question,
+            patient_id=patient_id,
+            trace_id=trace_id,
         )
         return {
             "status": result.status,
