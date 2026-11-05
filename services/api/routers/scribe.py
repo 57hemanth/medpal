@@ -13,7 +13,7 @@ from services.platform.auth import AuthContext
 from services.platform.egress.client import ModelUnavailable
 from services.platform.phi.scrubber import BlockedIdentifier, EgressBlocked
 from services.scribe.encounters import list_consultations, start_encounter
-from services.scribe.service import AlreadySigned, SoapDraft, draft_note, sign_note
+from services.scribe.service import AlreadySigned, SoapDraft, draft_note, list_notes, sign_note
 from services.scribe.speech import MAX_AUDIO_BYTES, SpeechUnavailable
 
 router = APIRouter(prefix="/api/scribe", tags=["scribe"])
@@ -166,6 +166,14 @@ def _session_out(thread_id: str, out: dict[str, Any]) -> SessionOut:
 def _doctor(auth: AuthContext) -> None:
     if auth["role"] != "doctor":
         raise HTTPException(status.HTTP_403_FORBIDDEN, "consultations are for doctors")
+
+
+@router.get("/notes")
+async def notes(request: Request, auth: Auth) -> list[dict[str, Any]]:
+    """Signed notes: a doctor's patients, a patient's own visits, a consented caregiver's, or compliance."""
+    if auth["role"] not in ("doctor", "patient", "caregiver", "compliance"):
+        raise HTTPException(status.HTTP_403_FORBIDDEN, "notes are for clinicians, patients and compliance")
+    return await list_notes(request.app.state.app_pool, auth)
 
 
 @router.get("/consultations")

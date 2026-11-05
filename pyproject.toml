@@ -78,13 +78,13 @@ root_packages = ["services"]
 [[tool.importlinter.contracts]]
 name = "Workflow modules are independent"
 type = "independence"
-modules = ["services.scheduling", "services.records", "services.scribe"]
+modules = ["services.scheduling", "services.records", "services.scribe", "services.pharmacy"]
 
 [[tool.importlinter.contracts]]
 name = "Platform does not depend on workflows or the agent"
 type = "forbidden"
 source_modules = ["services.platform"]
-forbidden_modules = ["services.agent", "services.api", "services.scheduling", "services.records", "services.scribe"]
+forbidden_modules = ["services.agent", "services.api", "services.scheduling", "services.records", "services.scribe", "services.pharmacy"]
 
 [dependency-groups]
 data = [

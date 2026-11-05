@@ -17,7 +17,7 @@ from services.agent.scribe.tools import PgScribeTools
 from services.agent.triage.assessor import ModelAssessor
 from services.agent.triage.graph import build_triage_graph
 from services.agent.triage.tools import PgTriageTools
-from services.api.routers import assistant, consent, me, ops, records, scribe, triage
+from services.api.routers import assistant, consent, me, ops, pharmacy, records, scribe, triage
 from services.mcp_server.server import build_mcp_server
 from services.platform.config import get_settings
 from services.platform.db import app_pool, checkpoint_pool
@@ -92,6 +92,7 @@ def create_app(*, triage_graph: Any | None = None) -> FastAPI:
     app.include_router(scribe.router)
     app.include_router(ops.router)
     app.include_router(assistant.router)
+    app.include_router(pharmacy.router)
 
     @app.get("/healthz", tags=["ops"])
     async def healthz() -> dict[str, str]:

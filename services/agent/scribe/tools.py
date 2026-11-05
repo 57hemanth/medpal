@@ -35,6 +35,7 @@ class PgScribeTools:
         soap: dict[str, Any],
         edit_history: list[dict[str, Any]],
         medicines: list[str],
+        transcript: str,
     ) -> dict[str, Any]:
         signed = await sign_note(
             self._pool,
@@ -44,5 +45,6 @@ class PgScribeTools:
             edited_soap=soap,
             edit_history=edit_history,
             medicines=medicines,
+            transcript=transcript,
         )
         return asdict(signed)

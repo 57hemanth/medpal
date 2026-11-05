@@ -50,7 +50,7 @@ class FakeScribeTools:
             for m in medicines
         ]
 
-    async def sign(self, auth, *, encounter_id, draft, soap, edit_history, medicines):
+    async def sign(self, auth, *, encounter_id, draft, soap, edit_history, medicines, transcript):
         self.signed.append({"soap": soap, "history": edit_history, "medicines": medicines})
         return {"note_id": "n1", "version": 1, "content_hash": "h"}
 

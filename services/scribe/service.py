@@ -84,6 +84,7 @@ async def sign_note(
     edited_soap: dict[str, Any],
     edit_history: list[dict[str, Any]] | None = None,
     medicines: list[str] | None = None,
+    transcript: str | None = None,
 ) -> SignedNote:
     """Persist the signed note and its prescription lines in ONE transaction. Only the encounter's doctor."""
     if auth["role"] != "doctor":
@@ -122,10 +123,20 @@ async def sign_note(
                 auth["user_id"],
             ),
         )
+        if transcript:
+            # The brief: the transcript and the note are kept (audio is not).
+            await conn.execute(
+                "UPDATE encounter SET transcript = %s WHERE encounter_id = %s", (transcript, encounter_id)
+            )
         for medicine in medicines or []:
+            # Same rule as the stock check: the name, else a composition that starts with it. Each
+            # matched line is reserved at the consultation's clinic by a trigger, in this transaction.
             match = await (
                 await conn.execute(
-                    "SELECT medicine_id::text FROM medicine WHERE lower(name) = lower(%s)", (medicine,)
+                    "SELECT medicine_id::text FROM medicine"
+                    " WHERE lower(name) = lower(%s) OR lower(composition) LIKE lower(%s) || ' %%'"
+                    " ORDER BY (lower(name) = lower(%s)) DESC LIMIT 1",
+                    (medicine, medicine, medicine),
                 )
             ).fetchone()
             await conn.execute(
@@ -150,3 +161,49 @@ async def sign_note(
             purpose="consultation scribe",
         )
     return SignedNote(note_id=note_id, version=1, content_hash=digest)
+
+
+async def list_notes(
+    pool: AsyncConnectionPool, auth: AuthContext, *, limit: int = 100
+) -> list[dict[str, Any]]:
+    """Signed notes the caller may read (row-level security decides): a doctor's own patients, a patient's
+    own visits, a consented caregiver's, or compliance. Each with its prescriptions and their pharmacy
+    status, and the transcript it was drafted from. Reading notes is audited like reading records."""
+    async with scoped(pool, auth) as conn:
+        rows = cast(
+            list[dict[str, Any]],
+            await (
+                await conn.execute(
+                    "SELECT n.note_id::text, n.version, n.signed_at, n.soap_json, n.edit_history,"
+                    " n.content_hash, n.patient_id::text, p.name AS patient_name, d.name AS doctor_name,"
+                    " c.name AS clinic_name,"
+                    " e.transcript,"
+                    " COALESCE((SELECT json_agg(json_build_object('medicine', rx.medicine_text,"
+                    "     'status', r.status, 'clinic', rc.name) ORDER BY rx.medicine_text)"
+                    "   FROM prescription rx"
+                    "   LEFT JOIN medicine_reservation r ON r.rx_id = rx.rx_id"
+                    "   LEFT JOIN clinic rc ON rc.clinic_id = r.clinic_id"
+                    "   WHERE rx.note_id = n.note_id AND rx.note_version = n.version), '[]') AS prescriptions"
+                    " FROM note_version n"
+                    " LEFT JOIN patient p ON p.patient_id = n.patient_id"
+                    " LEFT JOIN doctor d ON d.doctor_id = n.doctor_id"
+                    " LEFT JOIN encounter e ON e.encounter_id = n.encounter_id"
+                    " LEFT JOIN appointment a ON a.appt_id = e.appt_id"
+                    " LEFT JOIN slot s ON s.slot_id = a.slot_id"
+                    " LEFT JOIN clinic c ON c.clinic_id = s.clinic_id"
+                    " ORDER BY n.signed_at DESC LIMIT %s",
+                    (max(1, min(limit, 300)),),
+                )
+            ).fetchall(),
+        )
+        for row in rows:
+            await audit.write(
+                conn,
+                auth,
+                action="read",
+                resource="note_version",
+                record_id=row["note_id"],
+                patient_id=row["patient_id"],
+                purpose="view consultation notes",
+            )
+    return rows

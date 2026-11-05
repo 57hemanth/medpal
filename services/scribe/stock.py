@@ -20,12 +20,23 @@ Status = Literal["in_stock", "out_of_stock", "stale", "not_in_formulary"]
 
 
 @dataclass(frozen=True)
+class Alternative:
+    """Something the doctor may choose instead. Listed only; nothing is ever substituted automatically."""
+
+    medicine: str
+    kind: Literal["same_composition", "same_class", "other_clinic"]
+    available: int
+    clinic: str | None = None  # for "other_clinic"
+
+
+@dataclass(frozen=True)
 class StockFlag:
     medicine: str
     status: Status
     medicine_id: str | None = None
-    qty: int | None = None
+    qty: int | None = None  # available packs: the feed's count minus active reservations
     as_of: str | None = None
+    alternatives: tuple[Alternative, ...] = ()
 
     def as_dict(self) -> dict[str, Any]:
         return asdict(self)
@@ -95,11 +106,13 @@ class PostgresStockSource:
             for name in medicines:
                 row = await (
                     await conn.execute(
-                        "SELECT m.medicine_id::text AS medicine_id, ms.qty, ms.as_of FROM medicine m"
+                        "SELECT m.medicine_id::text AS medicine_id, m.name, m.composition,"
+                        " m.therapeutic_class, ms.as_of, medicine_available(%s, m.medicine_id) AS available"
+                        " FROM medicine m"
                         " LEFT JOIN medicine_stock ms ON ms.medicine_id = m.medicine_id AND ms.clinic_id = %s"
                         " WHERE lower(m.name) = lower(%s) OR lower(m.composition) LIKE lower(%s) || ' %%'"
                         " ORDER BY (lower(m.name) = lower(%s)) DESC LIMIT 1",
-                        (clinic_id, name, name, name),
+                        (clinic_id, clinic_id, name, name, name),
                     )
                 ).fetchone()
                 if row is None:
@@ -107,17 +120,65 @@ class PostgresStockSource:
                     continue
                 r = cast(dict[str, Any], row)
                 as_of = r["as_of"]
-                if r["qty"] is None or as_of is None or now - as_of > STALE_AFTER:
+                if as_of is None or now - as_of > STALE_AFTER:
                     status: Status = "stale"
                 else:
-                    status = "in_stock" if r["qty"] > 0 else "out_of_stock"
+                    status = "in_stock" if r["available"] > 0 else "out_of_stock"
+                alternatives = await _alternatives(conn, clinic_id, r) if status != "in_stock" else ()
                 out.append(
                     StockFlag(
                         name,
                         status,
                         r["medicine_id"],
-                        r["qty"],
+                        r["available"],
                         as_of.isoformat() if as_of is not None else None,
+                        alternatives,
                     )
                 )
         return out
+
+
+async def _alternatives(conn: Any, clinic_id: str, medicine: dict[str, Any]) -> tuple[Alternative, ...]:
+    """What the doctor could choose instead, most interchangeable first:
+
+    1. the same composition under another name, in stock here (a generic equivalent);
+    2. the same therapeutic class, in stock here (a different medicine: a clinical decision);
+    3. the same medicine, in stock at another clinic in the same city.
+    """
+    found: list[Alternative] = []
+    rows = await (
+        await conn.execute(
+            "SELECT m.name, m.composition = %(comp)s AS same_comp,"
+            " medicine_available(%(clinic)s, m.medicine_id) AS avail"
+            " FROM medicine m"
+            " WHERE m.medicine_id <> %(id)s::uuid"
+            " AND (m.composition = %(comp)s OR (%(cls)s::text IS NOT NULL AND m.therapeutic_class = %(cls)s))"
+            " ORDER BY same_comp DESC, avail DESC, m.name LIMIT 6",
+            {
+                "comp": medicine["composition"],
+                "cls": medicine["therapeutic_class"],
+                "id": medicine["medicine_id"],
+                "clinic": clinic_id,
+            },
+        )
+    ).fetchall()
+    for row in rows:
+        r = cast(dict[str, Any], row)
+        if r["avail"] > 0:
+            kind: Literal["same_composition", "same_class"] = (
+                "same_composition" if r["same_comp"] else "same_class"
+            )
+            found.append(Alternative(r["name"], kind, r["avail"]))
+    elsewhere = await (
+        await conn.execute(
+            "SELECT c.name, medicine_available(c.clinic_id, %s) AS avail FROM clinic c"
+            " WHERE c.clinic_id <> %s AND c.city = (SELECT city FROM clinic WHERE clinic_id = %s)"
+            " AND medicine_available(c.clinic_id, %s) > 0"
+            " ORDER BY avail DESC, c.name LIMIT 2",
+            (medicine["medicine_id"], clinic_id, clinic_id, medicine["medicine_id"]),
+        )
+    ).fetchall()
+    for row in elsewhere:
+        r = cast(dict[str, Any], row)
+        found.append(Alternative(medicine["name"], "other_clinic", r["avail"], r["name"]))
+    return tuple(found[:5])

@@ -46,6 +46,7 @@ class ScribeTools(Protocol):
         soap: dict[str, Any],
         edit_history: list[dict[str, Any]],
         medicines: list[str],
+        transcript: str,
     ) -> Awaitable[dict[str, Any]]: ...
 
 
@@ -147,6 +148,7 @@ def build_scribe_graph(tools: ScribeTools) -> StateGraph:
             soap=soap,
             edit_history=history,
             medicines=soap["medicines"],
+            transcript=state["transcript"],
         )
         return {"signed": signed, "outcome": "signed", "edit_history": history}
 

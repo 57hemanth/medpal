@@ -18,6 +18,8 @@ import httpx
 from psycopg_pool import AsyncConnectionPool
 from tenacity import retry, retry_if_exception_type, stop_after_attempt, wait_exponential
 
+from services.platform.db import scoped_system
+
 
 @dataclass(frozen=True)
 class StockReading:
@@ -88,7 +90,8 @@ async def sync_stock(pool: AsyncConnectionPool, feed: StockFeed) -> SyncReport:
     """Apply a feed to medicine_stock. Older readings never overwrite newer ones."""
     report = SyncReport()
     readings = await feed.readings()
-    async with pool.connection() as conn, conn.transaction():
+    # The worker writes as the system role: row-level security allows no one else to change counts.
+    async with scoped_system(pool) as conn:
         for r in readings:
             cur = await conn.execute(
                 "UPDATE medicine_stock ms SET qty = %s, as_of = %s FROM medicine m, clinic c"

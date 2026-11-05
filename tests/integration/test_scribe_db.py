@@ -141,6 +141,7 @@ async def test_signing_writes_note_and_prescriptions_once(pool, clinic_world, ad
         soap=soap,
         edit_history=[{"action": "sign"}],
         medicines=soap["medicines"],
+        transcript="Doctor: start atorvastatin.",
     )
     with psycopg.connect(admin_url) as conn:
         rx = conn.execute(
@@ -151,15 +152,23 @@ async def test_signing_writes_note_and_prescriptions_once(pool, clinic_world, ad
     assert rx == [(w["atorva_name"], w["atorva"], False), ("Unlisted drug", None, False)]
     with pytest.raises(AlreadySigned):
         await tools.sign(
-            doctor(w), encounter_id=encounter, draft=draft, soap=soap, edit_history=[], medicines=[]
+            doctor(w),
+            encounter_id=encounter,
+            draft=draft,
+            soap=soap,
+            edit_history=[],
+            medicines=[],
+            transcript="",
         )
     patient: AuthContext = {"user_id": w["puser"], "role": "patient", "acting_for_patient_id": w["patient"]}
     pharmacist: AuthContext = {"user_id": w["pharm"], "role": "pharmacist", "acting_for_patient_id": None}
-    for who in (patient, pharmacist):
+    # The patient sees both lines; a pharmacist sees only what is held at their own clinic (this one
+    # has no clinic), not every prescription in the network.
+    for who, expected in ((patient, 2), (pharmacist, 0)):
         async with scoped(pool, who) as conn:
             n = await (
                 await conn.execute(
                     "SELECT count(*) AS n FROM prescription WHERE note_id = %s", (signed["note_id"],)
                 )
             ).fetchone()
-        assert n["n"] == 2  # type: ignore[index]
+        assert n["n"] == expected  # type: ignore[index]
