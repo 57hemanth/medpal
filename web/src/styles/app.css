@@ -1,1 +1,99 @@
-body{margin:0;font-family:Inter,system-ui,sans-serif;background:#f7f7f5;color:#1f2933}.shell{display:grid;grid-template-columns:260px 1fr;min-height:100vh}aside{background:#102a43;color:white;padding:24px}aside a{display:block;color:white;margin:12px 0}main{padding:32px;max-width:960px}textarea,input,select{display:block;width:100%;margin:8px 0 16px;padding:10px}button{margin:6px 8px 6px 0;padding:10px 14px;border:0;border-radius:8px;background:#0b6bcb;color:white}article,blockquote,pre{background:white;border:1px solid #dde3ea;border-radius:12px;padding:16px}
+@import '@fontsource-variable/dm-sans';
+@import 'tailwindcss';
+
+@theme {
+  --font-sans: 'DM Sans Variable', sans-serif;
+  --color-brand-50: #eff7f3;
+  --color-brand-100: #dceee5;
+  --color-brand-200: #bbd9ca;
+  --color-brand-500: #3f8068;
+  --color-brand-600: #28664f;
+  --color-brand-700: #1e5948;
+  --color-brand-800: #194838;
+  --color-brand-900: #143c31;
+  --color-ink: #202b29;
+  --color-muted: #66736f;
+  --color-line: #e5eae7;
+  --color-canvas: #f7f9f8;
+}
+
+@layer base {
+  body {
+    @apply m-0 bg-canvas font-sans text-ink antialiased;
+  }
+  button,
+  input,
+  textarea,
+  select {
+    font: inherit;
+  }
+  button,
+  a,
+  input,
+  textarea,
+  select {
+    -webkit-tap-highlight-color: transparent;
+  }
+  button:not(:disabled),
+  select {
+    cursor: pointer;
+  }
+  button,
+  a,
+  input,
+  textarea,
+  select,
+  summary {
+    @apply outline-none focus-visible:ring-2 focus-visible:ring-brand-600 focus-visible:ring-offset-4;
+  }
+  button,
+  a {
+    @apply transition-colors duration-150;
+  }
+  textarea {
+    resize: vertical;
+  }
+  ::selection {
+    @apply bg-brand-100 text-brand-900;
+  }
+}
+
+@layer components {
+  .panel {
+    @apply rounded-2xl border border-line bg-white shadow-[0_2px_8px_-4px_rgba(20,60,49,0.08)];
+  }
+  .field {
+    @apply w-full rounded-xl border border-slate-300 bg-white px-4 py-3 text-base leading-relaxed text-ink placeholder:text-slate-500 focus:border-brand-600 focus:ring-2 focus:ring-brand-100 focus:ring-offset-0 sm:text-sm;
+  }
+  .field-label {
+    @apply mb-2 block text-sm font-semibold text-ink;
+  }
+  .eyebrow {
+    @apply text-[11px] font-bold uppercase tracking-[0.16em] text-muted;
+  }
+  .btn {
+    @apply inline-flex min-h-11 shrink-0 items-center justify-center gap-2 rounded-xl px-4 py-2.5 text-sm font-semibold disabled:cursor-not-allowed disabled:opacity-50;
+  }
+  .btn-primary {
+    @apply bg-brand-700 text-white hover:bg-brand-800;
+  }
+  .btn-secondary {
+    @apply border border-line bg-white text-ink hover:border-brand-200 hover:bg-brand-50;
+  }
+  .btn-ghost {
+    @apply text-muted hover:bg-slate-100 hover:text-ink;
+  }
+  .badge {
+    @apply inline-flex whitespace-nowrap items-center gap-1.5 rounded-full border px-2.5 py-1 text-[11px] font-semibold leading-none;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}

@@ -5,7 +5,7 @@ import { expect, test } from 'vitest';
 import { AuthProvider } from '../auth/AuthProvider';
 import { App } from './App';
 
-test('renders the MedPal navigation shell', () => {
+test('renders the test login page', () => {
   render(
     <QueryClientProvider client={new QueryClient()}>
       <AuthProvider>
@@ -16,6 +16,8 @@ test('renders the MedPal navigation shell', () => {
     </QueryClientProvider>,
   );
 
-  expect(screen.getByRole('heading', { name: 'MedPal' })).toBeInTheDocument();
-  expect(screen.getByRole('link', { name: 'Records' })).toBeInTheDocument();
+  expect(screen.getByText(/^MedPal/)).toBeInTheDocument();
+  expect(
+    screen.getByRole('heading', { name: 'Choose a test login' }),
+  ).toBeInTheDocument();
 });
