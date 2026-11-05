@@ -27,3 +27,5 @@ evals/runs/*.tmp
 .DS_Store
 .idea/
 .vscode/
+
+.medpal/

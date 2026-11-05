@@ -1,5 +1,5 @@
 # Local stack. `make up` starts the data services; `make up-all` adds the API container.
-# Tracing (Langfuse) and object storage (MinIO/S3) join when production persistence is configured.
+# Local record objects persist in a named volume; deployment can select private S3.
 name: medpal
 
 services:
@@ -36,7 +36,10 @@ services:
       MEDPAL_ENV: dev
       MEDPAL_DATABASE_URL: postgresql://medpal_app:medpal_app@postgres:5432/medpal          # app: RLS applies
       MEDPAL_MIGRATION_DATABASE_URL: postgresql://medpal:medpal@postgres:5432/medpal      # owner: migrations only
+      MEDPAL_OBJECT_STORE_DIRECTORY: /app/objects
       PORT: 8000
+    volumes:
+      - objects:/app/objects
     ports: ["8000:8000"]
     depends_on:
       postgres: { condition: service_healthy }
@@ -45,3 +48,4 @@ services:
 
 volumes:
   pgdata:
+  objects:
