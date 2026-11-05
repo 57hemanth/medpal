@@ -49,7 +49,7 @@ MedPal automates the routine parts and keeps humans in charge of every decision 
 | Verified against a real model (Gemini): answers, refusals, routing, drafts, fallback, cost | ✅ `make live-check` |
 | Local speech-to-text | 🟡 adapter and upload UI; local model provisioning required |
 
-**Tests:** 259 unit · 64 data · 62 integration (real Postgres) · 9 frontend · 40 real-model checks · evaluation gates · lint, type checks and module-boundary contracts. See [implementation status](docs/implementation-status.md) for what has been verified against a live stack.
+**Tests:** 259 unit · 64 data · 63 integration (real Postgres) · 10 frontend · 40 real-model checks · evaluation gates · lint, type checks and module-boundary contracts. See [implementation status](docs/implementation-status.md) for what has been verified against a live stack.
 
 ## Quick start
 
@@ -59,7 +59,7 @@ Prerequisites: Docker (running), [uv](https://docs.astral.sh/uv/), GNU make.
 make install     # Python 3.12 dependencies via uv
 make up          # Postgres (pgvector) on :5433, Redis on :6380
 make migrate     # apply the schema
-make seed        # RESETS dev data: loads 500 doctors, 480k slots and dev identities
+make seed        # RESETS dev data: 500 doctors, 480k slots, dev identities, sample lab reports
 make web-build   # build the web app once (the API serves it)
 make api         # app at http://localhost:8000, API docs at /docs
 ```
@@ -70,8 +70,8 @@ Open **http://localhost:8000**. There's no sign-in yet: the app opens on the pat
 
 | Profile | What they get |
 |---|---|
-| **Patient** (Asha Verma) | Home with next appointment and recent reports · care assistant (symptoms and report questions in one message, English or Hinglish) · appointments · health records with cited answers · sharing & consent |
-| **Caregiver** (Asha, for her mother Lata) | Records Lata has shared, and the access granted to her |
+| **Patient** (Asha Verma) | Home with next appointment and recent reports (open any report in the viewer) · care assistant (symptoms and report questions in one message, English or Hinglish) · appointments · health records with cited answers · sharing & consent |
+| **Caregiver** (Asha, for her mother Lata) | Lata's shared reports (view and ask about them), and the access granted to her |
 | **Doctor** | Today's consultations · consultation scribe: transcript → SOAP draft with stock-checked prescriptions → edit or redraft → sign · patient records |
 | **Front desk** | Overview with emergencies first · handoff queue · network appointments |
 | **Compliance** | Operations: latency, error rate and model spend per workflow from in-boundary traces · append-only audit log |
