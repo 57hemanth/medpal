@@ -52,7 +52,7 @@ const review = {
 };
 
 test('doctor picks a consultation, reviews stock-flagged draft, edits and signs', async () => {
-  const resumed: { action: string; soap?: { plan: string } }[] = [];
+  const resumed: { action: string; soap?: { plan: string; medicines?: string[] } }[] = [];
   vi.mocked(api).mockImplementation(async (path, options) => {
     if (path === '/api/scribe/consultations')
       return [
