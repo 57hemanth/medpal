@@ -7,6 +7,8 @@ from pydantic import BaseModel
 
 from services.api.deps import auth_ctx
 from services.platform.auth import AuthContext
+from services.platform.db import scoped
+from services.platform.metrics import collect
 from services.scheduling.operations import (
     cancel_appointment,
     list_appointments,
@@ -55,3 +57,12 @@ async def handoff_status(
         )
     except PermissionError as exc:
         raise HTTPException(403, str(exc)) from exc
+
+
+@router.get("/ops/metrics")
+async def metrics(request: Request, auth: Auth, hours: int = 24) -> dict[str, Any]:
+    """Latency percentiles, error rates, tokens and cost per run, from the in-boundary trace store."""
+    if auth["role"] != "compliance":
+        raise HTTPException(403, "operational metrics require the compliance role")
+    async with scoped(request.app.state.app_pool, auth) as conn:
+        return await collect(conn, hours=max(1, min(hours, 24 * 30)))
