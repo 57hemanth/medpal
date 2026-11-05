@@ -1,14 +1,14 @@
 """Consent lifecycle endpoints."""
 
 from datetime import datetime
-from typing import Annotated
+from typing import Annotated, Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 from pydantic import BaseModel, Field
 
 from services.api.deps import auth_ctx
 from services.platform.auth import AuthContext
-from services.records.consent import grant_consent, list_consents, revoke_consent
+from services.records.consent import grant_consent, grant_consent_to_phone, list_consents, revoke_consent
 
 router = APIRouter(prefix="/api/consents", tags=["consent"])
 
@@ -54,6 +54,32 @@ async def grant(body: GrantConsentIn, request: Request, auth: Auth) -> ConsentOu
         )
     except PermissionError as exc:
         raise HTTPException(status.HTTP_403_FORBIDDEN, str(exc)) from exc
+    return ConsentOut(**result.__dict__)
+
+
+class ShareIn(BaseModel):
+    phone: str = Field(min_length=6, max_length=20)
+    scope: list[Literal["records:read", "appointments:read"]] = Field(min_length=1)
+    purpose: str = Field(min_length=3, max_length=200)
+    days: int = Field(ge=1, le=365)
+
+
+@router.post("/share", response_model=ConsentOut, status_code=status.HTTP_201_CREATED)
+async def share(body: ShareIn, request: Request, auth: Auth) -> ConsentOut:
+    """Share your own record with a mobile number, for a purpose and a set number of days."""
+    try:
+        result = await grant_consent_to_phone(
+            request.app.state.app_pool,
+            auth,
+            phone=body.phone,
+            scope=list(dict.fromkeys(body.scope)),
+            purpose=body.purpose,
+            days=body.days,
+        )
+    except PermissionError as exc:
+        raise HTTPException(status.HTTP_403_FORBIDDEN, str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, str(exc)) from exc
     return ConsentOut(**result.__dict__)
 
 

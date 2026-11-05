@@ -71,12 +71,20 @@ def _identities(conn: psycopg.Connection) -> None:
             " VALUES (%s, %s, %s, %s, %s, %s)",
             (pid, name, dob, city, lang, clinic),
         )
-    for uid, pid in ((ASHA_USER, ASHA_PATIENT), (ROHAN_USER, ROHAN_PATIENT), (MOTHER_USER, MOTHER_PATIENT)):
+    # Every demo account has a mobile number for sign-in (all in a reserved synthetic range).
+    for uid, pid, phone in (
+        (ASHA_USER, ASHA_PATIENT, "+919820000001"),
+        (ROHAN_USER, ROHAN_PATIENT, "+919820000002"),
+        (MOTHER_USER, MOTHER_PATIENT, "+919820000003"),
+    ):
         conn.execute(
-            "INSERT INTO app_user (user_id, role, patient_id) VALUES (%s, 'patient', %s)", (uid, pid)
+            "INSERT INTO app_user (user_id, role, patient_id, phone) VALUES (%s, 'patient', %s, %s)",
+            (uid, pid, phone),
         )
     conn.execute(
-        "INSERT INTO app_user (user_id, role) VALUES (%s, 'desk'), (%s, 'compliance')",
+        "INSERT INTO app_user (user_id, role, phone, display_name)"
+        " VALUES (%s, 'desk', '+919820000004', 'Front desk'),"
+        " (%s, 'compliance', '+919820000006', 'Compliance')",
         (DESK_USER, COMPLIANCE_USER),
     )
     # Link the doctor login to the first General Medicine doctor (deterministic from the seed).
@@ -87,7 +95,8 @@ def _identities(conn: psycopg.Connection) -> None:
     if doctor is None:
         raise RuntimeError("no General Medicine doctor in the generated layer")
     conn.execute(
-        "INSERT INTO app_user (user_id, role, doctor_id) VALUES (%s, 'doctor', %s)", (DOCTOR_USER, doctor[0])
+        "INSERT INTO app_user (user_id, role, doctor_id, phone) VALUES (%s, 'doctor', %s, '+919820000005')",
+        (DOCTOR_USER, doctor[0]),
     )
     # The doctor's clinic for the demo: where their earliest open slot is. The pharmacist works there too,
     # so a note signed in the demo reserves its medicines where the pharmacist can see them.
@@ -96,7 +105,8 @@ def _identities(conn: psycopg.Connection) -> None:
         (doctor[0],),
     ).fetchone()[0]
     conn.execute(
-        "INSERT INTO app_user (user_id, role, clinic_id) VALUES (%s, 'pharmacist', %s)",
+        "INSERT INTO app_user (user_id, role, clinic_id, phone, display_name)"
+        " VALUES (%s, 'pharmacist', %s, '+919820000007', 'Pharmacy')",
         (PHARMACIST_USER, clinic),
     )
     # Three desk-booked consultations with that doctor, so the scribe can be tried more than once.

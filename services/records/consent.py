@@ -31,7 +31,7 @@ async def list_consents(pool: AsyncConnectionPool, auth: AuthContext) -> list[Co
             await conn.execute(
                 "SELECT c.consent_id::text, c.patient_id::text, c.grantee_user_id::text,"
                 " c.scope, c.purpose, c.expires_at, c.revoked_at,"
-                " p.name AS patient_name, consent_grantee_name(c.consent_id) AS grantee_name"
+                " p.name AS patient_name, consent_grantee_label(c.consent_id) AS grantee_name"
                 " FROM consent c"
                 " LEFT JOIN patient p ON p.patient_id = c.patient_id"
                 " ORDER BY c.granted_at DESC"
@@ -102,3 +102,40 @@ async def revoke_consent(pool: AsyncConnectionPool, auth: AuthContext, *, consen
             purpose=str(row_dict["purpose"]),
         )
     return ConsentGrant(**row_dict)
+
+
+async def grant_consent_to_phone(
+    pool: AsyncConnectionPool,
+    auth: AuthContext,
+    *,
+    phone: str,
+    scope: list[str],
+    purpose: str,
+    days: int,
+) -> ConsentGrant:
+    """A patient shares their own record with a mobile number. If nobody has that number yet, an invited
+    account is created; the access is waiting when they first sign in with it."""
+    from datetime import UTC, timedelta
+
+    from services.platform.signin import SignInError, normalize_phone
+
+    if auth["role"] != "patient" or not auth["acting_for_patient_id"]:
+        raise PermissionError("only the patient can share their record")
+    try:
+        number = normalize_phone(phone)
+    except SignInError as exc:
+        raise ValueError(str(exc)) from exc
+    async with scoped(pool, auth) as conn:
+        row = await (await conn.execute("SELECT invite_phone(%s)::text AS id", (number,))).fetchone()
+    grantee = cast(dict[str, Any], row)["id"]
+    if grantee == auth["user_id"]:
+        raise ValueError("That's your own number")
+    return await grant_consent(
+        pool,
+        auth,
+        patient_id=auth["acting_for_patient_id"],
+        grantee_user_id=grantee,
+        scope=scope,
+        purpose=purpose,
+        expires_at=datetime.now(UTC) + timedelta(days=days),
+    )
