@@ -162,6 +162,16 @@ Every suite above runs on a local fake model. These came from running the produc
 - *Fix:* the chat sends its triage thread id with each message, and a `visit` specialist answers follow-ups from that run's saved state: no model and no search, only the caller's own thread. A follow-up that also describes a new symptom still starts a triage.
 - *Test:* `test_a_follow_up_about_this_chats_booking_is_answered_from_it_not_from_records`, `test_follow_up_questions_are_answered_from_this_chats_booking_and_only_for_its_owner`, and the web test with the same conversation. Found by a person using the app, not by any suite.
 
+**32. The privacy layer erased a suicide statement.**
+- *What happened:* measuring the new model red-flag check on held-out phrasings, it missed "apni jaan lena chahta hoon" ("I want to take my own life"). The model wasn't at fault: the scrubber had sent it `<PERSON_1>`. With only one known Hindi word, the message wasn't treated as Hinglish, and spaCy read the whole sentence as a name.
+- *Fix:* a NER "name" longer than four words is treated as a misread sentence (known names, the names list and "naam X" cues are separate recognisers and unaffected), and the Hinglish word list gained common verbs and pronouns. All 66 existing leak and over-scrub cases still pass.
+- *Test:* `test_short_hinglish_safety_statements_survive_scrubbing`, `test_names_are_still_removed_next_to_hinglish_safety_words`.
+- *Lesson:* when a model step misses, read what it was actually sent before touching the prompt.
+
+**33. "Rules first" vs "model first" is a labelling question as much as an accuracy one.**
+- *What happened:* for specialty matching, rules-first with the model when unsure scored 30/30 on the tuned set and 27/30 on unseen phrasings; model-first scored 24/30 and 29/30. Most of model-first's "misses" (finger-joint swelling → Rheumatology, vomiting since morning → General Medicine) are defensible; the rules' misses (a groin lump that bulges on coughing → Pulmonology) are not.
+- *Decision:* rules first for now (best on the labels we have, no model latency when the rules are sure), with the comparison recorded for clinical review of the labels.
+
 ## Design choices worth copying
 
 - **Domain names in code** (`triage`, `records`, `scribe`), not internal codes: opaque names make every new reader look something up.

@@ -5,7 +5,7 @@ Reviewed against the code on 3 November 2026. **Verified** means a test in this 
 | Area | Implemented | Remaining |
 |---|---|---|
 | Web app | Role-based workspace: patient, caregiver, doctor, front desk and compliance each get a home dashboard and their own navigation; appointments, handoff queue, consultations, records, sharing, operations and audit-log pages; profile switcher in place of sign-in | Browser sign-in (OIDC); profiles are synthetic identities, not authentication |
-| Triage and booking | Durable graph; red-flag rules with conservative negation; **structured safety screen** ([ADR-0010](adr/0010-structured-safety-screen.md)); specialty matching with one clarifying question; shortlist; explicit slot choice; idempotent booking; handoff tickets | Clinician sign-off on rules and wording; SMS delivery |
+| Triage and booking | Durable graph; red-flag rules with conservative negation; **structured safety screen** ([ADR-0010](adr/0010-structured-safety-screen.md)); **one prefetched, bounded model step** that may only add red flags and guesses a specialty when the rules are unsure ([ADR-0013](adr/0013-model-step-in-triage.md)); specialty matching with one clarifying question; shortlist; explicit slot choice; idempotent booking; handoff tickets | Clinician sign-off on rules and wording; SMS delivery |
 | Evaluations | `make eval`: gated sets (135 red-flag, 30 specialty, 60 records doctor-review) and held-out sets reported but never tuned; `make live-check`: real-model checks (records values and cited pages, refusals, routing, drafts, fallback, metering); LLM judge with Cohen's κ calibration on clinician-reviewed labels (agrees with all 20 draft labels on Gemini) | Clinician review of the calibration labels |
 | Records | Upload with pre-storage privacy scan; doctor-review gate (rules + model `needs_doctor` flag) for advice questions; lay and Hinglish terms expanded to report terms in retrieval; **queued ingest** (arq on Redis, id only) with **parallel page processing** (LangGraph `Send`, bounded concurrency; [ADR-0009](adr/0009-async-ingest-parallel-pages.md)); RLS-scoped retrieval; explicit patient choice for caregivers; citation verification; safe degradation when the model is unavailable | Semantic embedding model; representative scan-quality evaluation |
 | Scribe | Encounter creation for the doctor's own appointment; **review graph with doctor interrupt** (sign / edit / reject → redraft, max 2); every edit kept as a draft version; medicines grounded in the transcript; **pharmacy stock check** with staleness; signing writes the note and prescriptions in one transaction | Clinical evaluation of drafts |
@@ -25,18 +25,19 @@ Run on 3 November 2026 against a live local stack, with Gemini: `gemini-4-argon`
 
 | Check | Result |
 |---|---|
-| Unit tests | 240 passed |
+| Unit tests | 259 passed |
 | Data tests | 64 passed |
 | Web tests and production build | 9 passed; build clean |
 | Lint, format, mypy, module-boundary contracts | clean |
 | Evaluation gates (`make eval`) | red-flag recall 100%, over-triage 2%, specialty 100%; records doctor-review recall 100%, over-refusal 0%. Held-out sets reported, never tuned: red-flag rules 20% (the safety questions cover the rest), doctor-review rules 30% |
-| Integration tests (real Postgres) | 61 passed |
+| Integration tests (real Postgres) | 62 passed |
 | Live API check (smoke) | 62/62 on Gemini |
+| Triage model step on held-out sets | unseen emergencies 24/25 with the model (5/25 rules only); unseen specialty phrasings 27/30 (7/30 rules only) |
 | Real-model check (`make live-check`) | 40/40: records values and cited pages (including Hinglish), refusals, held-out advice questions 10/10 with rules + model flag and 0/10 plain questions refused, routing 5/5 by the model, emergency never reaches the model, scribe drafts invent no medicines, broken primary falls through to the fallback, every call priced |
 | Provider failure in the wild | `gemini-4-argon` returned 504 during the run; the fallback answered and the patient saw no error |
 | LLM judge | agrees with all 20 draft labels (κ 1.0); **not calibrated** until 20 labels are clinician-reviewed |
-| Load test, 1,400 req/h then 3× burst, real model | **All targets met**, 0% errors: records answers p95 3.6 s (target 8 s), assistant p95 5.8 s (target 10 s), triage, safety questions and booking p95 under 30 ms |
-| Cost from real traces | $0.0020 per consultation (formula in the cost report); every call priced, real token counts including thinking, none estimated |
+| Load test, 1,400 req/h then 3× burst, real model, realistic reading time | **All targets met**, 0% errors: triage start p95 156 ms, after the safety questions 69 ms, records answers 6.3 s (target 8 s), assistant 8.8 s (target 10 s) |
+| Cost from real traces | $0.0019 per consultation (formula in the cost report); every call priced, real token counts including thinking |
 | Full application image | builds |
 | Deployment boundary | direct internet blocked; non-allowlisted host refused; allowlisted model API reachable |
 

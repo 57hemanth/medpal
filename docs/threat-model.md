@@ -41,7 +41,8 @@ STRIDE plus the threats specific to LLM systems. Each row names the control **an
 
 | Flow | Threat | STRIDE | Control | Proof | Status |
 |---|---|---|---|---|---|
-| Triage | An emergency is missed | Safety | Structured safety screen independent of wording (ADR-0010); rules as a fast path | `make eval` (recall 100% gate), safety-screen tests | ✅ |
+| Triage | An emergency is missed | Safety | Rules first; a structured safety screen independent of wording (ADR-0010); a model second pass that may only add (ADR-0013) | `make eval` (recall 100% gate), safety-screen tests, `make live-check` (24/25 unseen) | ✅ |
+| Triage | The privacy layer erases the words that matter | Safety | Over-scrub guards: implausibly long NER names dropped; Hinglish detection | `test_short_hinglish_safety_statements_survive_scrubbing` | ✅ |
 | Booking | Scripted bookings hoard slots | Denial of service | Idempotency keys; advisory lock plus capacity; patient-only booking | `test_concurrent_bookings_never_exceed_capacity` | ✅ (rate limiting ⏳) |
 | Models | Provider outage or malformed output | Denial of service | Fallback chain; `ModelUnavailable` degrades to a human path; triage emergencies need no model | `test_fallback_*`, `test_records_qa_degrades_safely…` | ✅ |
 | Models | A provider accepts the call and never answers | Denial of service | Hard deadline per provider attempt; low SDK retries; timeout falls through to the next provider, then a safe "unavailable" | `test_a_hung_provider_times_out_and_the_next_one_answers` | ✅ |

@@ -31,7 +31,7 @@ MedPal automates the routine parts and keeps humans in charge of every decision 
 | Feature | State |
 |---|---|
 | Triage → structured safety screen → clarifying question → shortlist → patient picks a slot → booking (pause/resume across app instances) | ✅ |
-| Emergency gate: red-flag rules plus a seven-question safety screen, with human handoff | ✅ evaluation-gated; clinician sign-off still external |
+| Emergency gate: red-flag rules, a seven-question safety screen, and a model second pass that can only add an emergency | ✅ evaluation-gated; 24/25 on unseen phrasings with the model; clinician sign-off still external |
 | Records Q&A with verified citations; caregiver must pick one patient | ✅ |
 | Queued records ingest with pages processed in parallel (LangGraph `Send`, bounded) | ✅ |
 | Consultation scribe: doctor interrupt, edit history, redraft, stock-aware prescriptions, signing | ✅ |
@@ -49,7 +49,7 @@ MedPal automates the routine parts and keeps humans in charge of every decision 
 | Verified against a real model (Gemini): answers, refusals, routing, drafts, fallback, cost | ✅ `make live-check` |
 | Local speech-to-text | 🟡 adapter and upload UI; local model provisioning required |
 
-**Tests:** 240 unit · 64 data · 61 integration (real Postgres) · 9 frontend · 40 real-model checks · evaluation gates · lint, type checks and module-boundary contracts. See [implementation status](docs/implementation-status.md) for what has been verified against a live stack.
+**Tests:** 259 unit · 64 data · 62 integration (real Postgres) · 9 frontend · 40 real-model checks · evaluation gates · lint, type checks and module-boundary contracts. See [implementation status](docs/implementation-status.md) for what has been verified against a live stack.
 
 ## Quick start
 
@@ -145,7 +145,7 @@ Start with **[docs/architecture.md](docs/architecture.md)**, which follows a req
 
 | Doc | What you'll learn |
 |---|---|
-| [docs/adr/](docs/adr/) | Twelve design decisions and why: LangGraph, row-level security, booking concurrency, Presidio, the egress boundary, the safety screen, … |
+| [docs/adr/](docs/adr/) | Thirteen design decisions and why: LangGraph, row-level security, booking concurrency, Presidio, the egress boundary, the safety screen, … |
 | [docs/roadmap.md](docs/roadmap.md) | Extensions built and proposed, with what each proves |
 | [docs/threat-model.md](docs/threat-model.md) | STRIDE and LLM-specific threats, each with its control and the test that proves it |
 | [docs/privacy-and-compliance.md](docs/privacy-and-compliance.md) | Every privacy obligation mapped to its control and the test that proves it |
