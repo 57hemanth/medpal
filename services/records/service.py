@@ -31,6 +31,15 @@ class UploadedRecord:
     sha256: str
 
 
+DOCUMENT_TYPES = ("lab_report", "radiology", "prescription", "discharge", "other")
+
+
+def _title_from(filename: str) -> str | None:
+    """'CBC report - March.pdf' -> 'CBC report - March'. A name the patient recognises, nothing more."""
+    stem = filename.rsplit("/", 1)[-1].rsplit(".", 1)[0].strip()
+    return stem[:120] or None
+
+
 async def upload_record(
     pool: AsyncConnectionPool,
     store: ObjectStore,
@@ -50,10 +59,10 @@ async def upload_record(
     uri = await store.put(key, content, content_type)
     async with scoped(pool, auth) as conn:
         await conn.execute(
-            "INSERT INTO document (patient_id, type, uri, sha256, uploaded_by)"
-            " VALUES (%s, %s, %s, %s, %s)"
+            "INSERT INTO document (patient_id, type, uri, sha256, uploaded_by, title)"
+            " VALUES (%s, %s, %s, %s, %s, %s)"
             " ON CONFLICT (patient_id, sha256) DO NOTHING",
-            (patient_id, doc_type, uri, digest, auth["user_id"]),
+            (patient_id, doc_type, uri, digest, auth["user_id"], _title_from(filename)),
         )
         doc = await _one(
             await conn.execute(
@@ -93,7 +102,7 @@ async def list_records(pool: AsyncConnectionPool, auth: AuthContext) -> list[dic
     async with scoped(pool, auth) as conn:
         rows = await (
             await conn.execute(
-                "SELECT d.doc_id::text, d.patient_id::text, d.type, d.sha256, d.uploaded_at,"
+                "SELECT d.doc_id::text, d.patient_id::text, d.type, d.title, d.sha256, d.uploaded_at,"
                 " d.phi_status, j.status, j.error"
                 " FROM document d LEFT JOIN LATERAL ("
                 "   SELECT status, error FROM ingest_job"
@@ -142,3 +151,66 @@ async def open_record(
         media_type="application/pdf" if is_pdf else "text/plain; charset=utf-8",
         filename=f"{row['type']}-{doc_id[:8]}.{'pdf' if is_pdf else 'txt'}",
     )
+
+
+async def update_record(
+    pool: AsyncConnectionPool,
+    auth: AuthContext,
+    *,
+    doc_id: str,
+    title: str | None = None,
+    doc_type: str | None = None,
+) -> dict[str, Any]:
+    """Rename or re-type an upload. The patient, or the caregiver who uploaded it (row-level security)."""
+    if doc_type is not None and doc_type not in DOCUMENT_TYPES:
+        raise ValueError("unknown record type")
+    changes: dict[str, Any] = {}
+    if title is not None:
+        changes["title"] = title.strip()[:120] or None
+    if doc_type is not None:
+        changes["type"] = doc_type
+    if not changes:
+        raise ValueError("nothing to change")
+    async with scoped(pool, auth) as conn:
+        cursor = await conn.execute(
+            f"UPDATE document SET {', '.join(f'{k} = %s' for k in changes)}"  # noqa: S608  fixed columns
+            " WHERE doc_id = %s RETURNING patient_id::text",
+            (*changes.values(), doc_id),
+        )
+        row = cast(dict[str, Any] | None, await cursor.fetchone())
+        if row is None:
+            raise LookupError("record not found or not yours to change")
+        await audit.write(
+            conn,
+            auth,
+            action="update",
+            resource="document",
+            record_id=doc_id,
+            patient_id=row["patient_id"],
+            purpose="rename or re-type record",
+        )
+    return {"doc_id": doc_id, **changes}
+
+
+async def delete_record(
+    pool: AsyncConnectionPool, store: ObjectStore, auth: AuthContext, *, doc_id: str
+) -> None:
+    """Delete an upload, its passages (so it can't be searched or cited again) and the stored file."""
+    async with scoped(pool, auth) as conn:
+        cursor = await conn.execute(
+            "DELETE FROM document WHERE doc_id = %s RETURNING uri, patient_id::text", (doc_id,)
+        )
+        row = cast(dict[str, Any] | None, await cursor.fetchone())
+        if row is None:
+            raise LookupError("record not found or not yours to delete")
+        await audit.write(
+            conn,
+            auth,
+            action="delete",
+            resource="document",
+            record_id=doc_id,
+            patient_id=row["patient_id"],
+            purpose="patient deleted record",
+        )
+    # After the commit: if this fails the row is already gone, and the file is unreachable without it.
+    await store.delete(row["uri"])

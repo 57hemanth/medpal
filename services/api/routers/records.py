@@ -1,10 +1,10 @@
 """Records upload and ingest status endpoints."""
 
 import uuid
-from typing import Annotated, Any
+from typing import Annotated, Any, Literal
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Request, Response, UploadFile, status
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from services.api.deps import auth_ctx
 from services.api.tracing import traced
@@ -13,7 +13,14 @@ from services.platform.config import get_settings
 from services.records.ingest import MAX_UPLOAD_BYTES, UploadRejected
 from services.records.ingest_graph import job_id
 from services.records.qa import answer_question
-from services.records.service import ingest_record, list_records, open_record, upload_record
+from services.records.service import (
+    delete_record,
+    ingest_record,
+    list_records,
+    open_record,
+    update_record,
+    upload_record,
+)
 
 router = APIRouter(prefix="/api/records", tags=["records"])
 
@@ -31,11 +38,17 @@ class RecordOut(BaseModel):
     doc_id: str
     patient_id: str
     type: str
+    title: str | None = None
     sha256: str
     uploaded_at: Any
     phi_status: str
     status: str | None = None
     error: str | None = None
+
+
+class RecordChangeIn(BaseModel):
+    title: str | None = Field(default=None, max_length=120)
+    type: Literal["lab_report", "radiology", "prescription", "discharge", "other"] | None = None
 
 
 class QuestionIn(BaseModel):
@@ -119,6 +132,29 @@ async def record_file(doc_id: str, request: Request, auth: Auth) -> Response:
             "X-Content-Type-Options": "nosniff",
         },
     )
+
+
+@router.patch("/{doc_id}")
+async def change_record(doc_id: str, body: RecordChangeIn, request: Request, auth: Auth) -> dict[str, Any]:
+    try:
+        uuid.UUID(doc_id)
+        return await update_record(
+            request.app.state.app_pool, auth, doc_id=doc_id, title=body.title, doc_type=body.type
+        )
+    except LookupError as exc:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "record not found") from exc
+    except ValueError as exc:
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, str(exc)) from exc
+
+
+@router.delete("/{doc_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def remove_record(doc_id: str, request: Request, auth: Auth) -> Response:
+    try:
+        uuid.UUID(doc_id)
+        await delete_record(request.app.state.app_pool, request.app.state.object_store, auth, doc_id=doc_id)
+    except (ValueError, LookupError) as exc:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "record not found") from exc
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
 @router.post("/questions", response_model=AnswerOut)

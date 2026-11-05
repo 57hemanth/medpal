@@ -16,6 +16,8 @@ class ObjectStore(Protocol):
 
     async def get(self, uri: str) -> bytes: ...
 
+    async def delete(self, uri: str) -> None: ...
+
 
 def _key(uri: str, bucket: str) -> str:
     prefix = f"s3://{bucket}/"
@@ -39,6 +41,9 @@ class MemoryObjectStore:
 
     async def get(self, uri: str) -> bytes:
         return self.objects[_key(uri, self.bucket)]
+
+    async def delete(self, uri: str) -> None:
+        self.objects.pop(_key(uri, self.bucket), None)
 
 
 @dataclass
@@ -76,6 +81,9 @@ class FileObjectStore:
     async def get(self, uri: str) -> bytes:
         return await asyncio.to_thread(self._path(uri).read_bytes)
 
+    async def delete(self, uri: str) -> None:
+        await asyncio.to_thread(self._path(uri).unlink, missing_ok=True)
+
 
 @dataclass
 class S3ObjectStore:
@@ -108,6 +116,9 @@ class S3ObjectStore:
                 body.close()
 
         return await asyncio.to_thread(read)
+
+    async def delete(self, uri: str) -> None:
+        await asyncio.to_thread(self.client.delete_object, Bucket=self.bucket, Key=_key(uri, self.bucket))
 
 
 def build_object_store(settings: Settings) -> ObjectStore:

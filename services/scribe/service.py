@@ -4,6 +4,7 @@ import hashlib
 import json
 import uuid
 from dataclasses import dataclass
+from datetime import UTC, datetime
 from typing import Any, cast
 
 from psycopg_pool import AsyncConnectionPool
@@ -178,12 +179,25 @@ async def list_notes(
                     " n.content_hash, n.patient_id::text, p.name AS patient_name, d.name AS doctor_name,"
                     " c.name AS clinic_name,"
                     " e.transcript,"
-                    " COALESCE((SELECT json_agg(json_build_object('medicine', rx.medicine_text,"
-                    "     'status', r.status, 'clinic', rc.name) ORDER BY rx.medicine_text)"
+                    " COALESCE((SELECT json_agg(json_build_object('rx_id', rx.rx_id,"
+                    "     'medicine', rx.medicine_text,"
+                    "     'status', r.status, 'clinic', rc.name, 'rx_status', rx.status,"
+                    "     'stop_reason', rx.stop_reason, 'stopped_at', rx.stopped_at,"
+                    "     'replaces', (SELECT o.medicine_text FROM prescription o"
+                    "                  WHERE o.rx_id = rx.replaces_rx_id))"
+                    "     ORDER BY rx.created_at, rx.medicine_text)"
                     "   FROM prescription rx"
                     "   LEFT JOIN medicine_reservation r ON r.rx_id = rx.rx_id"
                     "   LEFT JOIN clinic rc ON rc.clinic_id = r.clinic_id"
-                    "   WHERE rx.note_id = n.note_id AND rx.note_version = n.version), '[]') AS prescriptions"
+                    "   WHERE rx.note_id = n.note_id), '[]') AS prescriptions,"
+                    # Earlier versions, newest first, so an amendment never hides what was signed before.
+                    " COALESCE((SELECT json_agg(json_build_object('version', o.version,"
+                    "     'signed_at', o.signed_at,"
+                    "     'soap_json', o.soap_json) ORDER BY o.version DESC)"
+                    "   FROM note_version o WHERE o.note_id = n.note_id AND o.version < n.version), '[]')"
+                    "   AS earlier_versions,"
+                    " (n.doctor_id = (SELECT u.doctor_id FROM app_user u WHERE u.user_id = app_user_id()))"
+                    "   AS mine"
                     " FROM note_version n"
                     " LEFT JOIN patient p ON p.patient_id = n.patient_id"
                     " LEFT JOIN doctor d ON d.doctor_id = n.doctor_id"
@@ -191,6 +205,8 @@ async def list_notes(
                     " LEFT JOIN appointment a ON a.appt_id = e.appt_id"
                     " LEFT JOIN slot s ON s.slot_id = a.slot_id"
                     " LEFT JOIN clinic c ON c.clinic_id = s.clinic_id"
+                    " WHERE n.version = (SELECT max(v.version) FROM note_version v"
+                    "                    WHERE v.note_id = n.note_id)"
                     " ORDER BY n.signed_at DESC LIMIT %s",
                     (max(1, min(limit, 300)),),
                 )
@@ -207,3 +223,171 @@ async def list_notes(
                 purpose="view consultation notes",
             )
     return rows
+
+
+# ---- after signing: amendments and prescription changes -------------------------------------------
+
+SOAP_FIELDS = ("subjective", "objective", "assessment", "plan")
+
+
+class ChangeRefused(ValueError):
+    """Shown to the doctor as is."""
+
+
+async def amend_note(
+    pool: AsyncConnectionPool, auth: AuthContext, *, note_id: str, soap: dict[str, str], reason: str
+) -> SignedNote:
+    """A new version of a signed note, by the doctor who signed it. The earlier versions are untouched
+    (a trigger forbids changing them); the history records which sections changed and why."""
+    if auth["role"] != "doctor":
+        raise PermissionError("only doctors amend notes")
+    reason = reason.strip()
+    if not reason:
+        raise ChangeRefused("Say why the note is being amended")
+    async with scoped(pool, auth) as conn:
+        latest = cast(
+            dict[str, Any] | None,
+            await (
+                await conn.execute(
+                    "SELECT n.version, n.encounter_id::text, n.patient_id::text, n.doctor_id::text,"
+                    " n.soap_json, n.draft_json, n.edit_history"
+                    " FROM note_version n JOIN app_user u ON u.doctor_id = n.doctor_id AND u.user_id = %s"
+                    " WHERE n.note_id = %s ORDER BY n.version DESC LIMIT 1",
+                    (auth["user_id"], note_id),
+                )
+            ).fetchone(),
+        )
+        if latest is None:
+            raise PermissionError("only the doctor who signed a note can amend it")
+        new_soap = {**latest["soap_json"], **{k: soap[k].strip() for k in SOAP_FIELDS if k in soap}}
+        changed = [k for k in SOAP_FIELDS if new_soap.get(k) != latest["soap_json"].get(k)]
+        if not changed:
+            raise ChangeRefused("Nothing in the note has changed")
+        version = latest["version"] + 1
+        history = [
+            *latest["edit_history"],
+            {
+                "action": "amended",
+                "version": version,
+                "fields": changed,
+                "reason": reason[:300],
+                "at": datetime.now(UTC).isoformat(),
+            },
+        ]
+        digest = content_hash(new_soap)
+        await conn.execute(
+            "INSERT INTO note_version (note_id, version, encounter_id, patient_id, doctor_id,"
+            " soap_json, draft_json, edit_history, content_hash, signed_by)"
+            " VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)",
+            (
+                note_id,
+                version,
+                latest["encounter_id"],
+                latest["patient_id"],
+                latest["doctor_id"],
+                json.dumps(new_soap),
+                json.dumps(latest["draft_json"]),
+                json.dumps(history),
+                digest,
+                auth["user_id"],
+            ),
+        )
+        await audit.write(
+            conn,
+            auth,
+            action="amend",
+            resource="note_version",
+            record_id=note_id,
+            patient_id=latest["patient_id"],
+            purpose=f"amend note to version {version}",
+        )
+    return SignedNote(note_id=note_id, version=version, content_hash=digest)
+
+
+async def _medicine_match(conn: Any, medicine: str) -> str | None:
+    match = await (
+        await conn.execute(
+            "SELECT medicine_id::text FROM medicine"
+            " WHERE lower(name) = lower(%s) OR lower(composition) LIKE lower(%s) || ' %%'"
+            " ORDER BY (lower(name) = lower(%s)) DESC LIMIT 1",
+            (medicine, medicine, medicine),
+        )
+    ).fetchone()
+    return cast(dict[str, Any], match)["medicine_id"] if match else None
+
+
+async def change_prescription(
+    pool: AsyncConnectionPool,
+    auth: AuthContext,
+    *,
+    rx_id: str,
+    reason: str,
+    replacement: str | None = None,
+) -> dict[str, Any]:
+    """Stop a prescription (and, if given, prescribe a replacement in its place) in one transaction.
+    Only the prescribing doctor. The pharmacy hold is released and the patient gets a fixed message;
+    a replacement is held at the same clinic if it's in stock, like any prescription at signing."""
+    if auth["role"] != "doctor":
+        raise PermissionError("only doctors change prescriptions")
+    reason = reason.strip()
+    replacement = (replacement or "").strip() or None
+    if not reason:
+        raise ChangeRefused("Say why the prescription is being changed")
+    async with scoped(pool, auth) as conn:
+        rx = cast(
+            dict[str, Any] | None,
+            await (
+                await conn.execute(
+                    "SELECT rx.note_id::text, rx.note_version, rx.patient_id::text, rx.medicine_text,"
+                    " rx.status"
+                    " FROM prescription rx WHERE rx.rx_id = %s",
+                    (rx_id,),
+                )
+            ).fetchone(),
+        )
+        if rx is None:
+            raise LookupError("no such prescription")
+        if rx["status"] != "active":
+            raise ChangeRefused("This prescription has already been stopped")
+        message = (
+            f"Your doctor changed your prescription: {rx['medicine_text']} was replaced by {replacement}."
+            if replacement
+            else f"Your doctor stopped your prescription for {rx['medicine_text']}. Don't continue it "
+            "unless your doctor tells you to."
+        )
+        stopped = await (
+            await conn.execute("SELECT stop_prescription(%s, %s, %s) AS ok", (rx_id, reason, message))
+        ).fetchone()
+        if not cast(dict[str, Any], stopped)["ok"]:
+            raise PermissionError("only the prescribing doctor can change this prescription")
+        new_rx: str | None = None
+        if replacement:
+            row = await (
+                await conn.execute(
+                    "INSERT INTO prescription (note_id, note_version, patient_id, medicine_id, medicine_text,"
+                    " dose, substitute_ok, set_by, replaces_rx_id)"
+                    " VALUES (%s, %s, %s, %s, %s, %s, false, %s, %s)"
+                    " RETURNING rx_id::text",
+                    (
+                        rx["note_id"],
+                        rx["note_version"],
+                        rx["patient_id"],
+                        await _medicine_match(conn, replacement),
+                        replacement[:200],
+                        "as directed by the doctor",
+                        auth["user_id"],
+                        rx_id,
+                    ),
+                )
+            ).fetchone()
+            new_rx = cast(dict[str, Any], row)["rx_id"]
+        await audit.write(
+            conn,
+            auth,
+            action="update",
+            resource="prescription",
+            record_id=rx_id,
+            patient_id=rx["patient_id"],
+            purpose="replace prescription" if replacement else "stop prescription",
+        )
+    return {"rx_id": rx_id, "status": "stopped", "replacement_rx_id": new_rx}

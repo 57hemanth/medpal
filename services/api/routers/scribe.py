@@ -15,7 +15,16 @@ from services.platform.egress.client import ModelUnavailable
 from services.platform.phi.scrubber import BlockedIdentifier, EgressBlocked
 from services.platform.tracing import trace_run
 from services.scribe.encounters import list_consultations, start_encounter
-from services.scribe.service import AlreadySigned, SoapDraft, draft_note, list_notes, sign_note
+from services.scribe.service import (
+    AlreadySigned,
+    ChangeRefused,
+    SoapDraft,
+    amend_note,
+    change_prescription,
+    draft_note,
+    list_notes,
+    sign_note,
+)
 from services.scribe.speech import MAX_AUDIO_BYTES, SpeechUnavailable
 
 router = APIRouter(prefix="/api/scribe", tags=["scribe"])
@@ -38,6 +47,26 @@ class SignedOut(BaseModel):
     note_id: str
     version: int
     content_hash: str
+
+
+class AmendIn(BaseModel):
+    subjective: str | None = Field(default=None, max_length=20_000)
+    objective: str | None = Field(default=None, max_length=20_000)
+    assessment: str | None = Field(default=None, max_length=20_000)
+    plan: str | None = Field(default=None, max_length=20_000)
+    reason: str = Field(min_length=3, max_length=300)
+
+
+class PrescriptionChangeIn(BaseModel):
+    reason: str = Field(min_length=3, max_length=300)
+    replacement: str | None = Field(default=None, max_length=200)  # a medicine to prescribe instead
+
+
+def _valid_id(value: str) -> None:
+    try:
+        uuid.UUID(value)
+    except ValueError as exc:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "not found") from exc
 
 
 class QuickDraftOut(SoapDraft):
@@ -248,3 +277,35 @@ async def resume_session(thread_id: str, body: ReviewIn, request: Request, auth:
     if not snapshot.next:
         raise HTTPException(status.HTTP_409_CONFLICT, "this note is already signed")
     return await _run(request, thread_id, Command(resume=body.model_dump(exclude_none=True)))
+
+
+@router.post("/notes/{note_id}/amend", response_model=SignedOut)
+async def amend(note_id: str, body: AmendIn, request: Request, auth: Auth) -> SignedOut:
+    """A new version of a signed note. Earlier versions stay readable and unchanged."""
+    _valid_id(note_id)
+    soap = body.model_dump(exclude_none=True, exclude={"reason"})
+    try:
+        signed = await amend_note(
+            request.app.state.app_pool, auth, note_id=note_id, soap=soap, reason=body.reason
+        )
+    except PermissionError as exc:
+        raise HTTPException(status.HTTP_403_FORBIDDEN, str(exc)) from exc
+    except ChangeRefused as exc:
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, str(exc)) from exc
+    return SignedOut(note_id=signed.note_id, version=signed.version, content_hash=signed.content_hash)
+
+
+@router.post("/prescriptions/{rx_id}/change")
+async def change_rx(rx_id: str, body: PrescriptionChangeIn, request: Request, auth: Auth) -> dict[str, Any]:
+    """Stop a prescription, or stop it and prescribe a replacement. Prescriptions are never edited."""
+    _valid_id(rx_id)
+    try:
+        return await change_prescription(
+            request.app.state.app_pool, auth, rx_id=rx_id, reason=body.reason, replacement=body.replacement
+        )
+    except PermissionError as exc:
+        raise HTTPException(status.HTTP_403_FORBIDDEN, str(exc)) from exc
+    except LookupError as exc:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "no such prescription") from exc
+    except ChangeRefused as exc:
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, str(exc)) from exc

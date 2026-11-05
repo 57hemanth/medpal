@@ -4,6 +4,7 @@ import uuid
 from typing import Annotated, Any, Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Request, status
+from pydantic import BaseModel, Field
 
 from services.api.deps import auth_ctx
 from services.pharmacy import service as pharmacy
@@ -39,6 +40,78 @@ async def stock(request: Request, auth: Auth) -> list[dict[str, Any]]:
         return await pharmacy.clinic_stock(request.app.state.app_pool, auth)
     except pharmacy.NotAllowed as exc:
         raise _forbidden(exc) from exc
+
+
+class StockChangeIn(BaseModel):
+    kind: Literal["count", "delivery", "write_off"]
+    qty: int = Field(ge=0, le=100_000)
+    reason: str = Field(min_length=1, max_length=300)
+
+
+class MedicineIn(BaseModel):
+    name: str | None = Field(default=None, max_length=200)
+    composition: str | None = Field(default=None, max_length=200)
+    manufacturer: str | None = Field(default=None, max_length=200)
+    pack_size: str | None = Field(default=None, max_length=100)
+    price_inr: float | None = Field(default=None, ge=0, le=1_000_000)
+    therapeutic_class: str | None = Field(default=None, max_length=100)
+
+
+def _check_id(value: str) -> None:
+    try:
+        uuid.UUID(value)
+    except ValueError as exc:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "not found") from exc
+
+
+@router.post("/pharmacy/stock/{medicine_id}")
+async def change_stock(medicine_id: str, body: StockChangeIn, request: Request, auth: Auth) -> dict[str, Any]:
+    _check_id(medicine_id)
+    try:
+        return await pharmacy.adjust_stock(
+            request.app.state.app_pool, auth, medicine_id=medicine_id, **body.model_dump()
+        )
+    except pharmacy.NotAllowed as exc:
+        raise _forbidden(exc) from exc
+    except pharmacy.InvalidChange as exc:
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, str(exc)) from exc
+
+
+@router.get("/pharmacy/stock/history")
+async def stock_history(request: Request, auth: Auth, medicine_id: str | None = None) -> list[dict[str, Any]]:
+    if medicine_id:
+        _check_id(medicine_id)
+    try:
+        return await pharmacy.stock_history(request.app.state.app_pool, auth, medicine_id=medicine_id)
+    except pharmacy.NotAllowed as exc:
+        raise _forbidden(exc) from exc
+
+
+@router.post("/pharmacy/medicines", status_code=status.HTTP_201_CREATED)
+async def add_medicine(body: MedicineIn, request: Request, auth: Auth) -> dict[str, Any]:
+    try:
+        return await pharmacy.add_medicine(
+            request.app.state.app_pool, auth, body.model_dump(exclude_none=True)
+        )
+    except pharmacy.NotAllowed as exc:
+        raise _forbidden(exc) from exc
+    except pharmacy.InvalidChange as exc:
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, str(exc)) from exc
+
+
+@router.patch("/pharmacy/medicines/{medicine_id}")
+async def edit_medicine(medicine_id: str, body: MedicineIn, request: Request, auth: Auth) -> dict[str, Any]:
+    _check_id(medicine_id)
+    try:
+        return await pharmacy.update_medicine(
+            request.app.state.app_pool, auth, medicine_id, body.model_dump(exclude_unset=True)
+        )
+    except pharmacy.NotAllowed as exc:
+        raise _forbidden(exc) from exc
+    except pharmacy.InvalidChange as exc:
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, str(exc)) from exc
+    except LookupError as exc:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "no such medicine") from exc
 
 
 @router.get("/pharmacy/queue")
