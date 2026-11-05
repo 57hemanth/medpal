@@ -206,6 +206,24 @@ def looks_hinglish(text: str) -> bool:
     return hits >= 2 and hits / max(len(words), 1) >= 0.2
 
 
+_MAX_NAME_WORDS = 4
+
+
+def _implausible_ner_name(text: str, result: RecognizerResult) -> bool:
+    """A 'person' the English NER found that runs longer than a name ever does is a misread sentence.
+
+    spaCy reads short romanised-Hindi sentences as one long name: "apni jaan lena chahta hoon" ("I want
+    to end my life") became <PERSON_1>, erasing the one thing the safety check must see. Known names,
+    the names list and 'naam X' cues are separate recognisers and are not affected by this rule.
+    """
+    if result.entity_type != "PERSON":
+        return False
+    source = (result.recognition_metadata or {}).get("recognizer_name", "")
+    if "spacy" not in str(source).lower():
+        return False
+    return len(text[result.start : result.end].split()) > _MAX_NAME_WORDS
+
+
 def _name_cue_results(text: str) -> list[RecognizerResult]:
     """'naam shobha tai' / 'name is ravi': cover names the lists don't know, in Hinglish mode."""
     return [RecognizerResult("PERSON", m.start("name"), m.end("name"), 0.7) for m in _NAME_CUE.finditer(text)]
@@ -228,6 +246,7 @@ def analyze(
     )
     if hinglish:
         results += _name_cue_results(text)
+    results = [r for r in results if not _implausible_ner_name(text, r)]
     # Our own tokens must never be re-detected as entities.
     token_spans = [(m.start(), m.end()) for m in TOKEN_RE.finditer(text)]
     results = [r for r in results if not any(s <= r.start and r.end <= e for s, e in token_spans)]

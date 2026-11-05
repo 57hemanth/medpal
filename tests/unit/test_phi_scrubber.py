@@ -170,3 +170,20 @@ def test_entities_report_types_never_values():
     result = scrubber.tokenise("Neha Kulkarni, 9876543210")
     assert set(result.entities) == {"PERSON", "IN_PHONE"}
     assert all("Neha" not in e for e in result.entities)
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        "apni jaan lena chahta hoon",  # "I want to take my own life": was erased as one long <PERSON>
+        "main khud ko khatam karna chahta hoon",
+        "mujhe jeene ka mann nahi karta",
+    ],
+)
+def test_short_hinglish_safety_statements_survive_scrubbing(text):
+    assert scrubber.tokenise(text).text == text
+
+
+def test_names_are_still_removed_next_to_hinglish_safety_words():
+    out = scrubber.tokenise("mera naam asha verma hai aur apni jaan lena chahti hoon").text
+    assert "asha" not in out.lower() and "jaan lena" in out
