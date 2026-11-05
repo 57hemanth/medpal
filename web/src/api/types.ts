@@ -156,6 +156,10 @@ export interface Prescription {
   patient_name: string | null;
   reservation_status: 'reserved' | 'dispensed' | 'released' | null;
   clinic_name: string | null;
+  rx_status: 'active' | 'stopped';
+  stop_reason: string | null;
+  stopped_at: string | null;
+  replaces: string | null;
 }
 
 export interface SignedNote {
@@ -169,7 +173,19 @@ export interface SignedNote {
     plan: string;
     medicines?: string[];
   };
-  edit_history: { action: string; at?: string; fields?: string[] }[];
+  edit_history: {
+    action: string;
+    at?: string;
+    fields?: string[];
+    reason?: string;
+    version?: number;
+  }[];
+  earlier_versions: {
+    version: number;
+    signed_at: string;
+    soap_json: SignedNote['soap_json'];
+  }[];
+  mine: boolean | null;
   content_hash: string;
   patient_id: string;
   patient_name: string | null;
@@ -177,9 +193,14 @@ export interface SignedNote {
   clinic_name: string | null;
   transcript: string | null;
   prescriptions: {
+    rx_id: string;
     medicine: string;
     status: string | null;
     clinic: string | null;
+    rx_status: 'active' | 'stopped';
+    stop_reason: string | null;
+    stopped_at: string | null;
+    replaces: string | null;
   }[];
 }
 
@@ -234,4 +255,15 @@ export interface OutboxMessage {
   patient_name: string | null;
   doctor_name: string | null;
   on_hold: string | null;
+}
+
+export interface StockAdjustment {
+  adjustment_id: string;
+  medicine_id: string;
+  medicine: string;
+  kind: 'count' | 'delivery' | 'write_off';
+  qty_before: number;
+  qty_after: number;
+  reason: string;
+  made_at: string;
 }

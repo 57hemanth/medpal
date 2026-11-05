@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   ArrowUp,
   BookOpen,
@@ -7,7 +7,9 @@ import {
   ChevronDown,
   FileText,
   HeartPulse,
+  Pencil,
   Plus,
+  Trash2,
   UploadCloud,
 } from 'lucide-react';
 import { api } from '../../api/client';
@@ -16,7 +18,9 @@ import { RecordViewer } from './RecordViewer';
 import {
   Badge,
   Button,
+  DOC_TYPES,
   EmptyState,
+  Modal,
   ErrorNotice,
   PageHeader,
   StatusPill,
@@ -37,6 +41,7 @@ type HealthRecord = {
   error: string | null;
   uploaded_at: string;
   type: string;
+  title: string | null;
 };
 type Message = {
   id: string;
@@ -48,6 +53,92 @@ const suggestions = [
   'What does my report say about LDL?',
   'Help me understand my latest results',
 ];
+
+/** Rename or re-type an upload, or delete it. Only the patient's own records. */
+function EditRecord({
+  record,
+  remove,
+  onClose,
+}: {
+  record: HealthRecord;
+  remove: boolean;
+  onClose: () => void;
+}) {
+  const { auth } = useAuth();
+  const client = useQueryClient();
+  const [title, setTitle] = useState(record.title ?? '');
+  const [type, setType] = useState(record.type);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState('');
+  const name = record.title || describeDocType(record.type);
+  async function save() {
+    setBusy(true);
+    setError('');
+    try {
+      await api(
+        `/api/records/${record.doc_id}`,
+        remove
+          ? { method: 'DELETE' }
+          : { method: 'PATCH', body: JSON.stringify({ title, type }) },
+        auth,
+      );
+      await client.invalidateQueries({ queryKey: ['records'] });
+      onClose();
+    } catch (cause) {
+      setError(humanError(cause));
+    } finally {
+      setBusy(false);
+    }
+  }
+  if (remove)
+    return (
+      <Modal
+        title={`Delete “${name}”?`}
+        description="The file is removed, and the assistant can no longer read or quote it. This can't be undone."
+        onClose={onClose}
+        onSubmit={save}
+        submitLabel="Delete record"
+        busy={busy}
+        error={error}
+        danger
+      />
+    );
+  return (
+    <Modal
+      title="Edit record"
+      onClose={onClose}
+      onSubmit={save}
+      submitLabel="Save"
+      busy={busy}
+      error={error}
+    >
+      <label className="block">
+        <span className="field-label">Name</span>
+        <input
+          className="field"
+          maxLength={120}
+          placeholder="e.g. Lipid profile, March"
+          value={title}
+          onChange={(event) => setTitle(event.target.value)}
+        />
+      </label>
+      <label className="block">
+        <span className="field-label">Type</span>
+        <select
+          className="field"
+          value={type}
+          onChange={(event) => setType(event.target.value)}
+        >
+          {Object.entries(DOC_TYPES).map(([value, label]) => (
+            <option key={value} value={value}>
+              {label}
+            </option>
+          ))}
+        </select>
+      </label>
+    </Modal>
+  );
+}
 
 export function RecordsPage() {
   const { auth } = useAuth();
@@ -62,6 +153,11 @@ export function RecordsPage() {
   const [viewing, setViewing] = useState<{ id: string; title: string } | null>(
     null,
   );
+  const [changing, setChanging] = useState<{
+    record: HealthRecord;
+    remove: boolean;
+  } | null>(null);
+  const canChange = auth.role === 'patient';
   const logRef = useRef<HTMLDivElement>(null);
   const fileRef = useRef<HTMLInputElement>(null);
   const {
@@ -232,11 +328,14 @@ export function RecordsPage() {
                         <FileText size={17} />
                       </span>
                       <div className="min-w-0">
-                        <h3 className="text-xs font-semibold">
-                          {describeDocType(record.type)}{' '}
-                          {records.length - index}
+                        <h3 className="break-words text-xs font-semibold">
+                          {record.title ||
+                            `${describeDocType(record.type)} ${records.length - index}`}
                         </h3>
                         <p className="mt-1 text-[11px] text-muted">
+                          {record.title
+                            ? `${describeDocType(record.type)} · `
+                            : ''}
                           {formatDate(record.uploaded_at)}
                         </p>
                         <div className="mt-2 flex items-center gap-2">
@@ -246,12 +345,36 @@ export function RecordsPage() {
                             onClick={() =>
                               setViewing({
                                 id: record.doc_id,
-                                title: `${describeDocType(record.type)} · ${formatDate(record.uploaded_at)}`,
+                                title: `${record.title || describeDocType(record.type)} · ${formatDate(record.uploaded_at)}`,
                               })
                             }
                           >
                             View
                           </button>
+                          {canChange && (
+                            <>
+                              <button
+                                type="button"
+                                className="rounded p-1 text-muted hover:text-ink"
+                                aria-label={`Edit ${record.title || describeDocType(record.type)}`}
+                                onClick={() =>
+                                  setChanging({ record, remove: false })
+                                }
+                              >
+                                <Pencil size={13} />
+                              </button>
+                              <button
+                                type="button"
+                                className="rounded p-1 text-muted hover:text-red-700"
+                                aria-label={`Delete ${record.title || describeDocType(record.type)}`}
+                                onClick={() =>
+                                  setChanging({ record, remove: true })
+                                }
+                              >
+                                <Trash2 size={13} />
+                              </button>
+                            </>
+                          )}
                         </div>
                       </div>
                     </div>
@@ -431,6 +554,13 @@ export function RecordsPage() {
           </div>
         </div>
       </div>
+      {changing && (
+        <EditRecord
+          record={changing.record}
+          remove={changing.remove}
+          onClose={() => setChanging(null)}
+        />
+      )}
       {viewing && (
         <RecordViewer
           docId={viewing.id}

@@ -15,6 +15,8 @@ import {
 } from '../../components/ui';
 
 function whereToCollect(rx: Prescription) {
+  if (rx.rx_status === 'stopped')
+    return `Stopped by your doctor${rx.stop_reason ? `: ${rx.stop_reason}` : ''}. Don't continue it unless your doctor tells you to.`;
   if (rx.reservation_status === 'reserved')
     return `Held for you at the ${rx.clinic_name} pharmacy`;
   if (rx.reservation_status === 'dispensed')
@@ -67,9 +69,16 @@ export function PrescriptionsPage() {
                 {data.map((rx) => (
                   <tr key={rx.rx_id}>
                     <td>
-                      <span className="block font-medium">
+                      <span
+                        className={`block font-medium ${rx.rx_status === 'stopped' ? 'text-muted line-through' : ''}`}
+                      >
                         {rx.medicine ?? rx.medicine_text}
                       </span>
+                      {rx.replaces && (
+                        <span className="block text-[12px] text-muted">
+                          Replaces {rx.replaces}
+                        </span>
+                      )}
                       <span className="text-[12px] text-muted">
                         {[rx.composition, rx.pack_size]
                           .filter(Boolean)
@@ -86,7 +95,11 @@ export function PrescriptionsPage() {
                     <td className="text-muted">{whereToCollect(rx)}</td>
                     <td>
                       <StatusPill
-                        status={rx.reservation_status ?? 'not_held'}
+                        status={
+                          rx.rx_status === 'stopped'
+                            ? 'stopped'
+                            : (rx.reservation_status ?? 'not_held')
+                        }
                       />
                     </td>
                   </tr>

@@ -1,6 +1,8 @@
-import type { ButtonHTMLAttributes, ReactNode } from 'react';
+import { useEffect, useRef } from 'react';
+import type { ButtonHTMLAttributes, FormEvent, ReactNode } from 'react';
 import {
   AlertCircle,
+  X,
   ArrowUpRight,
   HeartPulse,
   LoaderCircle,
@@ -194,6 +196,7 @@ const STATUS: Record<
   sending: { label: 'Sending', tone: 'blue' },
   skipped: { label: 'Not sent', tone: 'neutral' },
   on_hold: { label: 'On hold', tone: 'amber' },
+  stopped: { label: 'Stopped', tone: 'red' },
 };
 
 /** One vocabulary for every status shown in the product. */
@@ -438,7 +441,7 @@ export function describeReason(reason: string) {
     .join(' · ');
 }
 
-const DOC_TYPES: Record<string, string> = {
+export const DOC_TYPES: Record<string, string> = {
   lab_report: 'Lab report',
   prescription: 'Prescription',
   discharge: 'Discharge summary',
@@ -448,4 +451,88 @@ const DOC_TYPES: Record<string, string> = {
 
 export function describeDocType(type: string) {
   return DOC_TYPES[type] ?? type.replaceAll('_', ' ');
+}
+
+/** A small form in a dialog: Escape or the close button cancels; focus starts on the first field. */
+export function Modal({
+  title,
+  description,
+  children,
+  onClose,
+  onSubmit,
+  submitLabel,
+  busy,
+  error,
+  danger,
+}: {
+  title: string;
+  description?: ReactNode;
+  children?: ReactNode;
+  onClose: () => void;
+  onSubmit: () => void;
+  submitLabel: string;
+  busy?: boolean;
+  error?: string | null;
+  danger?: boolean;
+}) {
+  const ref = useRef<HTMLFormElement>(null);
+  useEffect(() => {
+    const first = ref.current?.querySelector<HTMLElement>(
+      'input, select, textarea, button[type="submit"]',
+    );
+    first?.focus();
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') onClose();
+    };
+    document.addEventListener('keydown', onKey);
+    return () => document.removeEventListener('keydown', onKey);
+  }, [onClose]);
+  return (
+    <div className="fixed inset-0 z-50 flex items-end justify-center bg-slate-900/40 p-4 sm:items-center">
+      <form
+        ref={ref}
+        role="dialog"
+        aria-modal="true"
+        aria-label={title}
+        className="max-h-[90dvh] w-full max-w-md overflow-y-auto rounded-2xl bg-white shadow-xl"
+        onSubmit={(event: FormEvent) => {
+          event.preventDefault();
+          if (!busy) onSubmit();
+        }}
+      >
+        <div className="flex items-start justify-between gap-3 border-b border-line px-5 py-4">
+          <div>
+            <h2 className="text-base font-semibold">{title}</h2>
+            {description && (
+              <div className="mt-1 text-[13px] text-muted">{description}</div>
+            )}
+          </div>
+          <button
+            type="button"
+            className="btn btn-ghost -mr-2 px-2"
+            aria-label="Close"
+            onClick={onClose}
+          >
+            <X size={16} />
+          </button>
+        </div>
+        <div className="space-y-4 px-5 py-4">
+          {children}
+          <ErrorNotice message={error} />
+        </div>
+        <div className="flex justify-end gap-2 border-t border-line px-5 py-3">
+          <Button type="button" variant="ghost" onClick={onClose}>
+            Cancel
+          </Button>
+          <Button
+            type="submit"
+            variant={danger ? 'danger' : 'primary'}
+            busy={busy}
+          >
+            {submitLabel}
+          </Button>
+        </div>
+      </form>
+    </div>
+  );
 }
