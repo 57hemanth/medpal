@@ -98,7 +98,9 @@ export function DoctorHome() {
                   <th>Patient</th>
                   <th className="hidden sm:table-cell">Clinic</th>
                   <th>Note</th>
-                  <th className="sr-only">Action</th>
+                  <th>
+                    <span className="sr-only">Action</span>
+                  </th>
                 </tr>
               </thead>
               <tbody>

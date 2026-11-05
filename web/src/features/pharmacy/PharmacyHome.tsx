@@ -140,7 +140,9 @@ export function PharmacyHome() {
                   <th className="hidden md:table-cell">Prescribed by</th>
                   <th>Held</th>
                   <th>Status</th>
-                  <th className="sr-only">Actions</th>
+                  <th>
+                    <span className="sr-only">Actions</span>
+                  </th>
                 </tr>
               </thead>
               <tbody>

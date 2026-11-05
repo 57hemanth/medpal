@@ -120,7 +120,9 @@ export function AppointmentsPage() {
                   <th>Doctor</th>
                   <th className="hidden md:table-cell">Clinic</th>
                   <th>Status</th>
-                  <th className="sr-only">Actions</th>
+                  <th>
+                    <span className="sr-only">Actions</span>
+                  </th>
                 </tr>
               </thead>
               <tbody>
