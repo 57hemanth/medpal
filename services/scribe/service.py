@@ -34,6 +34,10 @@ class ScribeReviewNeeded(ValueError):
     pass
 
 
+class AlreadySigned(ValueError):
+    """Signed notes are immutable; an amendment would be a new version, not a second first version."""
+
+
 def _canonical(data: dict[str, Any]) -> str:
     return json.dumps(data, sort_keys=True, separators=(",", ":"))
 
@@ -49,15 +53,26 @@ def validate_medicine_evidence(draft: SoapDraft, transcript: str) -> None:
         raise ScribeReviewNeeded(f"medicine_not_in_transcript:{','.join(missing)}")
 
 
-async def draft_note(chat: EgressChatClient, *, transcript: str) -> SoapDraft:
-    draft = await chat.ask_structured(
-        ModelRequest(
-            system="Draft a SOAP note from the transcript. Do not add medicines absent from the transcript.",
-            user=transcript,
-            purpose="scribe draft",
-        ),
+DRAFT_INSTRUCTIONS = (
+    "Draft a SOAP note from the consultation transcript. Structure what was said; never add a diagnosis, "
+    "medicine, dose or test the doctor did not state. If the doctor names a drug class without a molecule "
+    "or dose, write '[doctor to specify]'. List only medicines named in the transcript."
+)
+
+
+async def request_draft(chat: EgressChatClient, *, transcript: str, comments: str | None = None) -> SoapDraft:
+    """Ask the model for a draft. No medicine validation here: the scribe graph grounds medicines itself
+    and shows the doctor anything it had to reject."""
+    user = transcript if not comments else f"{transcript}\n\nThe doctor rejected the last draft: {comments}"
+    return await chat.ask_structured(
+        ModelRequest(system=DRAFT_INSTRUCTIONS, user=user, purpose="scribe draft"),
         SoapDraft,
     )
+
+
+async def draft_note(chat: EgressChatClient, *, transcript: str, comments: str | None = None) -> SoapDraft:
+    """One-shot draft for the quick-draft endpoint: refuses any medicine absent from the transcript."""
+    draft = await request_draft(chat, transcript=transcript, comments=comments)
     validate_medicine_evidence(draft, transcript)
     return draft
 
@@ -70,7 +85,9 @@ async def sign_note(
     draft: SoapDraft,
     edited_soap: dict[str, Any],
     edit_history: list[dict[str, Any]] | None = None,
+    medicines: list[str] | None = None,
 ) -> SignedNote:
+    """Persist the signed note and its prescription lines in ONE transaction. Only the encounter's doctor."""
     if auth["role"] != "doctor":
         raise PermissionError("only doctors can sign notes")
     note_id = str(uuid.uuid4())
@@ -86,6 +103,11 @@ async def sign_note(
         if encounter is None:
             raise PermissionError("encounter is not visible")
         row = cast(dict[str, Any], encounter)
+        already = await (
+            await conn.execute("SELECT 1 FROM note_version WHERE encounter_id = %s LIMIT 1", (encounter_id,))
+        ).fetchone()
+        if already:
+            raise AlreadySigned("this consultation already has a signed note")
         await conn.execute(
             "INSERT INTO note_version (note_id, version, encounter_id, patient_id, doctor_id,"
             " soap_json, draft_json, edit_history, content_hash, signed_by)"
@@ -102,6 +124,24 @@ async def sign_note(
                 auth["user_id"],
             ),
         )
+        for medicine in medicines or []:
+            match = await (
+                await conn.execute(
+                    "SELECT medicine_id::text FROM medicine WHERE lower(name) = lower(%s)", (medicine,)
+                )
+            ).fetchone()
+            await conn.execute(
+                "INSERT INTO prescription (note_id, note_version, patient_id, medicine_id, medicine_text,"
+                " dose, substitute_ok, set_by) VALUES (%s, 1, %s, %s, %s, %s, false, %s)",
+                (
+                    note_id,
+                    row["patient_id"],
+                    cast(dict[str, Any], match)["medicine_id"] if match else None,
+                    medicine,
+                    "as written in the signed note",
+                    auth["user_id"],
+                ),
+            )
         await audit.write(
             conn,
             auth,

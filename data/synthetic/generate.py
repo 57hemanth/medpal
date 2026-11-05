@@ -29,11 +29,13 @@ from pydantic import BaseModel, Field, ValidationError, field_validator
 from .reference import (
     CITY_NAME_MIX,
     CLINICS,
+    FORMULARY,
     GROUP_LANGUAGES,
     HOSPITALS,
     LANGUAGE_RULES,
     MIN_DOCTORS_PER_SPECIALTY,
     NAME_GROUPS,
+    OUT_OF_STOCK_SHARE,
     SPECIALTIES,
     ClinicRef,
 )
@@ -300,8 +302,29 @@ def write_outputs(seed: int = DEFAULT_SEED, start: date | None = None, out_dir: 
             w.writerow([doctor_id, stable_id("clinic", clinic_key), starts_at.isoformat(), 1, "true"])
             report.slots += 1
 
+    write_formulary(seed, out_dir)
     (out_dir / "generated_manifest.json").write_text(json.dumps(asdict(report), indent=2))
     return report
+
+
+def write_formulary(seed: int, out_dir: Path) -> None:
+    """Medicines and per-clinic stock. `as_of` is set at load time by the seed (a nightly feed)."""
+    rng = random.Random(seed + 1)
+    with (out_dir / "medicines.csv").open("w", newline="") as f:
+        w = csv.writer(f)
+        w.writerow(["medicine_id", "name", "composition", "pack_size", "price_inr", "source"])
+        for name, composition, pack, price in FORMULARY:
+            w.writerow([stable_id("medicine", name), name, composition, pack, price, "generated-formulary"])
+    with (out_dir / "medicine_stock.csv").open("w", newline="") as f:
+        w = csv.writer(f)
+        w.writerow(["clinic_id", "medicine_id", "qty", "as_of"])
+        for clinic in CLINICS:
+            for name, *_ in FORMULARY:
+                qty = 0 if rng.random() < OUT_OF_STOCK_SHARE else rng.randint(20, 400)
+                placeholder_as_of = "1970-01-01T00:00:00Z"  # replaced at load time by the seed
+                w.writerow(
+                    [stable_id("clinic", clinic.key), stable_id("medicine", name), qty, placeholder_as_of]
+                )
 
 
 def main() -> None:

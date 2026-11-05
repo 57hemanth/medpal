@@ -24,8 +24,13 @@ TABLES = [
     ("doctors.csv", "doctor", "doctor_id, name, specialty_id, languages, years, synthetic"),
     ("doctor_clinic.csv", "doctor_clinic", "doctor_id, clinic_id"),
     ("slots.csv", "slot", "doctor_id, clinic_id, starts_at, capacity, synthetic"),
+    ("medicines.csv", "medicine", "medicine_id, name, composition, pack_size, price_inr, source"),
+    ("medicine_stock.csv", "medicine_stock", "clinic_id, medicine_id, qty, as_of"),
 ]
-RESET = "TRUNCATE hospital, clinic, specialty, doctor, doctor_clinic, slot, patient, app_user CASCADE"
+RESET = (
+    "TRUNCATE hospital, clinic, specialty, doctor, doctor_clinic, slot, patient, app_user,"
+    " medicine, medicine_stock CASCADE"
+)
 
 # Fixed development identities (stable ids so dev auth headers and docs keep working).
 ASHA_PATIENT, ASHA_USER = "00000000-0000-0000-0000-0000000b0001", "00000000-0000-0000-0000-0000000e0001"
@@ -80,6 +85,13 @@ def _identities(conn: psycopg.Connection) -> None:
     conn.execute(
         "INSERT INTO app_user (user_id, role, doctor_id) VALUES (%s, 'doctor', %s)", (DOCTOR_USER, doctor[0])
     )
+    # Rohan has a desk-booked appointment with that doctor, so the scribe has a consultation to open.
+    conn.execute(
+        "INSERT INTO appointment (patient_id, slot_id, status, source, idempotency_key, created_by)"
+        " SELECT %s, slot_id, 'booked', 'desk', 'seed-scribe-demo', %s FROM slot"
+        " WHERE doctor_id = %s AND starts_at > now() ORDER BY starts_at LIMIT 1",
+        (ROHAN_PATIENT, DESK_USER, doctor[0]),
+    )
     # Lata grants her daughter Asha read access to her records for 180 days.
     now = datetime.now(UTC)
     conn.execute(
@@ -94,15 +106,18 @@ def main() -> None:
     settings = get_settings()
     if settings.env == "prod":
         sys.exit("refusing to seed: MEDPAL_ENV=prod")
-    if not (OUT_DIR / "slots.csv").exists():
+    if not all((OUT_DIR / name).exists() for name, _, _ in TABLES):
         print("generated layer missing: generating…")
         write_outputs()
     with psycopg.connect(settings.migration_database_url) as conn, conn.transaction():
         conn.execute(RESET)
         counts = {table: _copy(conn, OUT_DIR / file, table, cols) for file, table, cols in TABLES}
+        # Stock arrives as a nightly feed: stamp it as this morning's, so freshness flags are meaningful.
+        conn.execute("UPDATE medicine_stock SET as_of = date_trunc('day', now()) + interval '6 hours'")
         _identities(conn)
     print("loaded:", ", ".join(f"{t}={n:,}" for t, n in counts.items()))
     print("dev identities: Asha (patient + caregiver for her mother Lata), Rohan, desk, doctor, compliance")
+    print("the doctor has one consultation booked with Rohan, ready for the scribe")
     print(
         "try: curl -s localhost:8000/triage -H 'content-type: application/json' "
         f"-H 'X-Dev-User-Id: {ASHA_USER}' -H 'X-Dev-Role: patient' -H 'X-Dev-Patient-Id: {ASHA_PATIENT}' "

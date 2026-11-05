@@ -349,3 +349,34 @@ LANGUAGE_RULES: dict[str, dict[str, float]] = {
     "Hyderabad": {"te": 0.75, "hi": 0.60},
 }
 GROUP_LANGUAGES: dict[str, list[str]] = {"marathi": ["mr"], "telugu": ["te"], "deccani": ["ur", "hi"]}
+
+# ---- formulary: common generics for stock-aware prescribing (a modelling choice, not a real list) ----
+# (name, composition, pack size, price in INR). Names are generic (INN) names, never brands.
+FORMULARY: list[tuple[str, str, str, float]] = [
+    ("Atorvastatin", "atorvastatin 10 mg", "10 tablets", 58.0),
+    ("Rosuvastatin", "rosuvastatin 10 mg", "10 tablets", 96.0),
+    ("Metformin", "metformin 500 mg", "20 tablets", 32.0),
+    ("Glimepiride", "glimepiride 1 mg", "10 tablets", 45.0),
+    ("Amlodipine", "amlodipine 5 mg", "15 tablets", 28.0),
+    ("Telmisartan", "telmisartan 40 mg", "15 tablets", 64.0),
+    ("Losartan", "losartan 50 mg", "15 tablets", 52.0),
+    ("Metoprolol", "metoprolol succinate 25 mg", "10 tablets", 48.0),
+    ("Aspirin", "aspirin 75 mg", "14 tablets", 12.0),
+    ("Clopidogrel", "clopidogrel 75 mg", "10 tablets", 74.0),
+    ("Paracetamol", "paracetamol 500 mg", "15 tablets", 18.0),
+    ("Ibuprofen", "ibuprofen 400 mg", "15 tablets", 26.0),
+    ("Diclofenac", "diclofenac 50 mg", "10 tablets", 22.0),
+    ("Pantoprazole", "pantoprazole 40 mg", "15 tablets", 85.0),
+    ("Omeprazole", "omeprazole 20 mg", "15 capsules", 42.0),
+    ("Ondansetron", "ondansetron 4 mg", "10 tablets", 38.0),
+    ("Cetirizine", "cetirizine 10 mg", "10 tablets", 16.0),
+    ("Montelukast", "montelukast 10 mg", "10 tablets", 110.0),
+    ("Salbutamol", "salbutamol 100 mcg inhaler", "200 doses", 140.0),
+    ("Azithromycin", "azithromycin 500 mg", "3 tablets", 72.0),
+    ("Amoxicillin", "amoxicillin 500 mg", "10 capsules", 64.0),
+    ("Levothyroxine", "levothyroxine 50 mcg", "100 tablets", 120.0),
+    ("Cholecalciferol", "vitamin D3 60000 IU", "4 capsules", 99.0),
+    ("Calcium carbonate", "calcium carbonate 500 mg", "15 tablets", 75.0),
+    ("Oral rehydration salts", "ORS WHO formula", "1 sachet", 21.0),
+]
+OUT_OF_STOCK_SHARE = 0.15  # some medicines must be out of stock somewhere, or stock flags never fire
