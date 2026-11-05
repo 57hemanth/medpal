@@ -108,6 +108,45 @@ Real mistakes made while building MedPal, each with what went wrong, why, the fi
 - *What happened:* two smoke-test scripts were themselves broken. zsh doesn't split `$var` into words, and `docker exec` without `-i` ignores a heredoc. They produced a 401 and an empty result that looked like application bugs.
 - *Lesson:* read the output before believing it.
 
+## What only a real model showed
+
+Every suite above runs on a local fake model. These came from running the product against Gemini (`make live-check`, `make load-test`).
+
+**22. A model call with no deadline.**
+- *What happened:* under load, one request sat for eight minutes waiting on the provider; the Gemini client's default timeout is none, with six retries. A stuck provider could hold a patient's request indefinitely.
+- *Fix:* every provider attempt has a hard deadline (`MEDPAL_CHAT_TIMEOUT_SECONDS`, default 30) enforced by the fallback chain, and SDK retries are kept low so the chain, not the SDK, decides what happens next. A timeout is a provider failure: next provider, then a safe "unavailable".
+- *Test:* `test_a_hung_provider_times_out_and_the_next_one_answers`, `test_when_every_provider_hangs_the_caller_gets_model_unavailable_quickly`.
+
+**23. A safety rule tested only on the phrasings it was written for.**
+- *What happened:* "How much atorvastatin should I take for this LDL?" was answered from the record. The doctor-review rule was six keywords; on a fresh held-out set it caught 30% of advice questions.
+- *Fix:* two layers. Broader rules, gated on an evaluation set (recall 100%, over-refusal ≤ 10%), and a `needs_doctor` flag in the model's answer schema that can only send a question *to* a doctor. Together they caught 10/10 held-out advice questions with no plain questions refused.
+- *Test:* `make eval` (gate), `make live-check` (held-out, real model).
+
+**24. Estimated tokens hide the real cost of thinking models.**
+- *What happened:* structured calls were metered by estimating tokens from the output text. A thinking model spent about 90 output tokens to return a one-word label; the estimate said 1. The cost sheet would have been several times too low.
+- *Fix:* structured calls ask LangChain for the raw provider message (`include_raw`) and meter its real usage, thinking included. The usage travels in a per-task context variable, so parallel supervisor branches can't swap numbers.
+- *Test:* `test_structured_calls_meter_real_usage_including_thinking_tokens`.
+
+**25. "Sugar" is not in the report.**
+- *What happened:* "mera sugar test ka result kya tha?" found nothing. Full-text search ANDed every word of a conversational question, and reports say "glucose" and "HbA1c", not "sugar".
+- *Fix:* an OR query of the meaningful words (English and Hinglish fillers dropped) plus a reviewed map of lay terms to report terms, sanitised to `[a-z0-9]` before it reaches `to_tsquery`.
+- *Test:* `test_lay_and_hinglish_questions_reach_the_right_page`, `test_lexical_query_cannot_inject_tsquery_syntax`.
+
+**26. A prompt instruction with no place to go.**
+- *What happened:* the draft prompt said to write "[doctor to specify]" when the doctor names a drug class. The model put the placeholder in the *medicines list*, and the quick-draft endpoint rejected the whole note.
+- *Fix:* the prompt says where the placeholder goes (the plan) and what the medicines list may hold (drug names as spoken). The endpoint now grounds medicines like the review graph does (keep what the transcript names, show the rest as rejected) instead of failing.
+- *Test:* `test_draft_note_rejects_medicines_absent_from_the_transcript_and_reports_them`; `make live-check` scribe cases.
+
+**27. Reasoning effort is a per-task setting.**
+- *What happened:* low thinking halved routing latency with the same accuracy, so it was tried for answers too. It made no real difference to answer latency and lost a citation on one records answer.
+- *Fix:* `MEDPAL_CHAT_SMALL_THINKING_LEVEL=low` for routing only; answers and drafts keep the default.
+- *Lesson:* measure each tier separately; a setting that's right for labels can be wrong for answers.
+
+**28. A screen can lie even when the API is right.**
+- *What happened:* the sharing page showed a consent that a parent had granted *to* the patient as if the patient had shared it, with a revoke button that would fail. The API returned exactly what row-level security allowed; the page assumed every row was the viewer's own.
+- *Fix:* the page tells "you shared" from "shared with you" by the record's owner and offers revoke only on your own; the API returns names where RLS allows.
+- *Test:* `ConsentPage.test.tsx`. Found by taking screenshots of every role's pages, not by unit tests.
+
 ## Design choices worth copying
 
 - **Domain names in code** (`triage`, `records`, `scribe`), not internal codes: opaque names make every new reader look something up.

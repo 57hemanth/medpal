@@ -44,6 +44,8 @@ STRIDE plus the threats specific to LLM systems. Each row names the control **an
 | Triage | An emergency is missed | Safety | Structured safety screen independent of wording (ADR-0010); rules as a fast path | `make eval` (recall 100% gate), safety-screen tests | ✅ |
 | Booking | Scripted bookings hoard slots | Denial of service | Idempotency keys; advisory lock plus capacity; patient-only booking | `test_concurrent_bookings_never_exceed_capacity` | ✅ (rate limiting ⏳) |
 | Models | Provider outage or malformed output | Denial of service | Fallback chain; `ModelUnavailable` degrades to a human path; triage emergencies need no model | `test_fallback_*`, `test_records_qa_degrades_safely…` | ✅ |
+| Models | A provider accepts the call and never answers | Denial of service | Hard deadline per provider attempt; low SDK retries; timeout falls through to the next provider, then a safe "unavailable" | `test_a_hung_provider_times_out_and_the_next_one_answers` | ✅ |
+| Records Q&A | The assistant gives medicine or dose advice from a report | Safety | Doctor-review rules (gated by `make eval`) plus a model `needs_doctor` flag that can only escalate | `make eval`, `make live-check` held-out set (10/10) | ✅ |
 | Peak load | The morning rush exceeds latency targets | Denial of service | Stateless API; checkpoints in Postgres; queue for ingest | `make load-test` (p95 per endpoint) | 🟡 passes with the fake model; re-run with a real model |
 
 ## Known gaps

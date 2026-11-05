@@ -1,4 +1,4 @@
-# Storage, document extraction and speech setup
+# Storage, extraction, speech and model setup
 
 All identified documents and audio processing belong inside the deployment boundary. These
 adapters do not provision cloud infrastructure, credentials, model weights or external services.
@@ -71,3 +71,24 @@ converted locally. Audio stays in memory, is never uploaded to object storage an
 for a retention job. The returned transcript must be reviewed before drafting a note; no audio
 upload drafts or signs anything automatically. With no local model configured the endpoint
 returns 503, while typed transcript drafting remains available.
+
+## Hosted models
+
+All generation goes through the egress client, which de-identifies first. Without configuration a local
+placeholder model keeps every flow working (it never invents clinical content). To use Gemini, copy
+`.env.example` to `.env` and fill in the Gemini block:
+
+| Setting | Meaning |
+|---|---|
+| `MEDPAL_CHAT_PROVIDER=gemini`, `MEDPAL_CHAT_API_KEY` | Provider and key (`openai`, `anthropic` and `openai-compatible` also work) |
+| `MEDPAL_CHAT_MODEL` | Large tier: records answers, note drafts |
+| `MEDPAL_CHAT_SMALL_MODEL` | Small tier: assistant routing |
+| `MEDPAL_CHAT_SMALL_THINKING_LEVEL=low` | Reasoning effort for routing. Measured: same accuracy, half the latency. Leave the large tier on the default |
+| `MEDPAL_CHAT_FALLBACK_*` | A second provider tried when the first fails, times out or returns invalid output |
+| `MEDPAL_CHAT_TIMEOUT_SECONDS` (30), `MEDPAL_CHAT_MAX_RETRIES` (1) | Hard deadline per provider attempt; SDK retries kept low so the fallback chain decides |
+| `MEDPAL_MODEL_PRICES`, `MEDPAL_PRICE_LIST_DATE` | USD per million tokens and the date you read the price list. Unpriced models report cost as "unpriced", never a guess |
+
+After changing a model or prompt, run `make live-check` against the running API: it checks records
+answers (value and cited page), refusals, assistant routing, scribe drafts, provider fallback and cost
+metering, and writes a report to `evals/runs/`. Unit and integration tests always use the local model,
+whatever `.env` says, so they stay free and deterministic.

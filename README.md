@@ -45,10 +45,11 @@ MedPal automates the routine parts and keeps humans in charge of every decision 
 | Row-level security for every role, consent with expiry and revocation | ✅ |
 | Presidio de-identification (English, Hinglish, Indian identifiers) | ✅ |
 | Append-only audit, immutable signed notes | ✅ |
-| React app for patients, doctors, front desk and consent | ✅ test-login identities; browser OIDC deferred |
+| Web app: role-based dashboards for patients, caregivers, doctors, front desk and compliance; audit log and operations views | ✅ profile switcher until sign-in is added |
+| Verified against a real model (Gemini): answers, refusals, routing, drafts, fallback, cost | ✅ `make live-check` |
 | Local speech-to-text | 🟡 adapter and upload UI; local model provisioning required |
 
-**Tests:** 217 unit · 64 data · 55 integration (real Postgres) · 5 frontend · evaluation gates · lint, type checks and module-boundary contracts. See [implementation status](docs/implementation-status.md) for what has been verified against a live stack.
+**Tests:** 226 unit · 64 data · 59 integration (real Postgres) · 8 frontend · 40 real-model checks · evaluation gates · lint, type checks and module-boundary contracts. See [implementation status](docs/implementation-status.md) for what has been verified against a live stack.
 
 ## Quick start
 
@@ -59,8 +60,21 @@ make install     # Python 3.12 dependencies via uv
 make up          # Postgres (pgvector) on :5433, Redis on :6380
 make migrate     # apply the schema
 make seed        # RESETS dev data: loads 500 doctors, 480k slots and dev identities
-make api         # http://localhost:8000/docs
+make web-build   # build the web app once (the API serves it)
+make api         # app at http://localhost:8000, API docs at /docs
 ```
+
+### The product
+
+Open **http://localhost:8000**. There's no sign-in yet: the app opens on the patient profile, and the profile switcher at the bottom of the sidebar moves between the synthetic workspace profiles.
+
+| Profile | What they get |
+|---|---|
+| **Patient** (Asha Verma) | Home with next appointment and recent reports · care assistant (symptoms and report questions in one message, English or Hinglish) · appointments · health records with cited answers · sharing & consent |
+| **Caregiver** (Asha, for her mother Lata) | Records Lata has shared, and the access granted to her |
+| **Doctor** | Today's consultations · consultation scribe: transcript → SOAP draft with stock-checked prescriptions → edit or redraft → sign · patient records |
+| **Front desk** | Overview with emergencies first · handoff queue · network appointments |
+| **Compliance** | Operations: latency, error rate and model spend per workflow from in-boundary traces · append-only audit log |
 
 ### Try it
 
@@ -92,12 +106,12 @@ curl -s localhost:8000/api/assistant "${H[@]}" \
 
 ### Using a real model (Gemini)
 
-Copy `.env.example` to `.env` and fill in the Gemini block (provider, model ids, API key and prices).
-Text is de-identified before it leaves; without a key, a local placeholder model keeps every flow working.
+Copy `.env.example` to `.env` and fill in the Gemini block (provider, model ids, API key and prices); see [model setup](docs/adapters.md#hosted-models).
+Text is de-identified before it leaves; without a key, a local placeholder model keeps every flow working. Then run `make live-check` to verify answers, routing, drafts, fallback and cost metering against the real model.
 
 The dev identity above is **Asha Verma** (patient, Pune), who can also act as caregiver for her mother **Lata**. Other dev logins (front desk, doctor, compliance) are listed by `make seed`.
 
-> Dev authentication trusts `X-Dev-*` headers and refuses to start when `MEDPAL_ENV=prod`. The login page offers synthetic test identities; browser OIDC login is intentionally deferred.
+> Dev authentication trusts `X-Dev-*` headers and refuses to start when `MEDPAL_ENV=prod`. The web app switches between synthetic profiles; browser sign-in (OIDC) is the next step before any real deployment.
 
 ### Tests and checks
 
@@ -109,6 +123,8 @@ make lint        # ruff, mypy, import-linter module boundaries
 make web-build   # React type-check + production build
 make web-test    # React unit tests
 make eval        # evaluation sets; fails if a release gate is missed
+make live-check  # real-model checks against the running API (needs a key in .env)
+make judge       # LLM judge with calibration status
 ```
 
 ### Running like production
