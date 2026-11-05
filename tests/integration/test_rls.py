@@ -527,3 +527,28 @@ async def test_local_fake_model_answers_from_the_patients_own_record(pool, recor
     assert answer.status == "answered"
     assert answer.answer.startswith("From your record:")
     assert {c.patient_id for c in answer.citations} == {w["pa"]}
+
+
+async def test_the_grantor_sees_who_she_shared_with_but_strangers_learn_nothing(pool, records_world):
+    from services.records.consent import list_consents
+
+    w = records_world
+    stranger_user, stranger_patient = str(uuid.uuid4()), str(uuid.uuid4())
+    with psycopg.connect(get_settings().migration_database_url) as conn, conn.transaction():
+        consent_id = conn.execute(
+            "INSERT INTO consent (patient_id, grantee_user_id, scope, purpose, granted_by, expires_at)"
+            " VALUES (%s, %s, '{records:read}', 'second opinion', %s, now() + interval '7 days')"
+            " RETURNING consent_id::text",
+            (w["pa"], w["ub"], w["ua"]),
+        ).fetchone()[0]
+        grantee = conn.execute("SELECT name FROM patient WHERE patient_id = %s", (w["pb"],)).fetchone()[0]
+        conn.execute("INSERT INTO patient (patient_id, name) VALUES (%s, 'Stranger')", (stranger_patient,))
+        conn.execute(
+            "INSERT INTO app_user (user_id, role, patient_id) VALUES (%s, 'patient', %s)",
+            (stranger_user, stranger_patient),
+        )
+    mine = await list_consents(pool, as_(w["ua"], "patient", w["pa"]))
+    assert any(c.consent_id == consent_id and c.grantee_name == grantee for c in mine)
+    async with scoped(pool, as_(stranger_user, "patient", stranger_patient)) as conn:
+        row = await (await conn.execute("SELECT consent_grantee_name(%s) AS n", (consent_id,))).fetchone()
+    assert row["n"] is None  # type: ignore[index]  # not hers, not to her: nothing

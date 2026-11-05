@@ -31,11 +31,9 @@ async def list_consents(pool: AsyncConnectionPool, auth: AuthContext) -> list[Co
             await conn.execute(
                 "SELECT c.consent_id::text, c.patient_id::text, c.grantee_user_id::text,"
                 " c.scope, c.purpose, c.expires_at, c.revoked_at,"
-                " p.name AS patient_name, gp.name AS grantee_name"
+                " p.name AS patient_name, consent_grantee_name(c.consent_id) AS grantee_name"
                 " FROM consent c"
                 " LEFT JOIN patient p ON p.patient_id = c.patient_id"
-                " LEFT JOIN app_user gu ON gu.user_id = c.grantee_user_id"
-                " LEFT JOIN patient gp ON gp.patient_id = gu.patient_id"
                 " ORDER BY c.granted_at DESC"
             )
         ).fetchall()
