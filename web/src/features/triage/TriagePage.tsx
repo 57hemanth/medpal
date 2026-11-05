@@ -33,11 +33,16 @@ interface Candidate {
   clinic_name: string;
   display_time: string;
 }
+interface SafetyQuestion {
+  key: string;
+  question: string;
+}
 interface TriageOut {
   thread_id: string;
   status: string;
   reply?: string;
   candidates?: Candidate[];
+  safety_questions?: SafetyQuestion[];
   booking_id?: string;
   specialty?: string;
 }
@@ -60,6 +65,87 @@ const prompts = [
   'I need help with a skin rash',
   'I have a recurring headache',
 ];
+
+function describe(result: TriageOut): string {
+  if (result.status === 'awaiting_choice')
+    return `I found ${result.candidates?.length ?? 0} available options${result.specialty ? ` in ${result.specialty.toLowerCase()}` : ''}. Choose the appointment that works best for you.`;
+  if (result.status === 'awaiting_safety_check')
+    return (
+      result.reply ??
+      'Before we book, please answer a few quick safety questions.'
+    );
+  return result.reply ?? 'Your request has been sent to the clinic team.';
+}
+
+/** One explicit Yes/No per red-flag question. No "no to all" shortcut: each must be read. */
+export function SafetyCheck({
+  questions,
+  disabled,
+  onSubmit,
+}: {
+  questions: SafetyQuestion[];
+  disabled: boolean;
+  onSubmit: (answers: Record<string, boolean>) => void;
+}) {
+  const [answers, setAnswers] = useState<Record<string, boolean>>({});
+  const complete = questions.every((q) => q.key in answers);
+  return (
+    <form
+      className="mt-4 space-y-2.5"
+      aria-label="Safety questions"
+      onSubmit={(event) => {
+        event.preventDefault();
+        if (complete && !disabled) onSubmit(answers);
+      }}
+    >
+      {questions.map((q) => (
+        <fieldset
+          key={q.key}
+          className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-line p-3"
+        >
+          <legend className="sr-only">{q.question}</legend>
+          <span className="text-sm text-slate-700" aria-hidden="true">
+            {q.question}
+          </span>
+          <span className="flex gap-2">
+            {([true, false] as const).map((value) => (
+              <label
+                key={String(value)}
+                className={`cursor-pointer rounded-lg border px-3 py-1 text-xs font-medium ${
+                  answers[q.key] === value
+                    ? value
+                      ? 'border-red-300 bg-red-50 text-red-800'
+                      : 'border-brand-300 bg-brand-50 text-brand-800'
+                    : 'border-line text-muted'
+                }`}
+              >
+                <input
+                  type="radio"
+                  className="sr-only"
+                  name={q.key}
+                  disabled={disabled}
+                  checked={answers[q.key] === value}
+                  onChange={() =>
+                    setAnswers((previous) => ({ ...previous, [q.key]: value }))
+                  }
+                />
+                {value ? 'Yes' : 'No'}
+              </label>
+            ))}
+          </span>
+        </fieldset>
+      ))}
+      <Button
+        type="submit"
+        disabled={disabled || !complete}
+        className="text-xs"
+      >
+        Continue
+        <ArrowRight size={13} />
+      </Button>
+    </form>
+  );
+}
 
 function AssistantAvatar() {
   return (
@@ -109,6 +195,8 @@ export function TriagePage() {
 
   async function start(value = text) {
     if (busy || value.trim().length < 3) return;
+    if (active?.status === 'awaiting_clarification')
+      return clarify(active, value);
     setBusy(true);
     setError('');
     setText('');
@@ -124,17 +212,94 @@ export function TriagePage() {
         auth,
       );
       setActive(result);
-      const response =
-        result.status === 'awaiting_choice'
-          ? `I found ${result.candidates?.length ?? 0} available options${result.specialty ? ` in ${result.specialty.toLowerCase()}` : ''}. Choose the appointment that works best for you.`
-          : (result.reply ?? 'Your request has been sent to the clinic team.');
       setMessages((previous) => [
         ...previous,
-        { id: crypto.randomUUID(), role: 'assistant', text: response, result },
+        {
+          id: crypto.randomUUID(),
+          role: 'assistant',
+          text: describe(result),
+          result,
+        },
       ]);
     } catch (cause) {
       setError(humanError(cause));
       setText(value);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  /** The assistant asked a clarifying question: the next message answers it, in the same run. */
+  async function clarify(result: TriageOut, value: string) {
+    setBusy(true);
+    setError('');
+    setText('');
+    setMessages((previous) => [
+      ...previous,
+      { id: crypto.randomUUID(), role: 'user', text: value.trim() },
+    ]);
+    try {
+      const response = await api<TriageOut>(
+        `/triage/${result.thread_id}/resume`,
+        { method: 'POST', body: JSON.stringify({ answer: value.trim() }) },
+        auth,
+      );
+      setActive(response);
+      setMessages((previous) => [
+        ...previous,
+        {
+          id: crypto.randomUUID(),
+          role: 'assistant',
+          text: describe(response),
+          result: response,
+        },
+      ]);
+    } catch (cause) {
+      setError(humanError(cause));
+      setText(value);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function answerSafety(
+    result: TriageOut,
+    answers: Record<string, boolean>,
+  ) {
+    if (
+      busy ||
+      active?.thread_id !== result.thread_id ||
+      active?.status !== 'awaiting_safety_check'
+    )
+      return;
+    setBusy(true);
+    setError('');
+    try {
+      const response = await api<TriageOut>(
+        `/triage/${result.thread_id}/resume`,
+        { method: 'POST', body: JSON.stringify({ safety_answers: answers }) },
+        auth,
+      );
+      const yes = Object.values(answers).some(Boolean);
+      setActive(response);
+      setMessages((previous) => [
+        ...previous,
+        {
+          id: crypto.randomUUID(),
+          role: 'user',
+          text: yes
+            ? 'I answered yes to a safety question.'
+            : 'None of these apply to me.',
+        },
+        {
+          id: crypto.randomUUID(),
+          role: 'assistant',
+          text: describe(response),
+          result: response,
+        },
+      ]);
+    } catch (cause) {
+      setError(humanError(cause));
     } finally {
       setBusy(false);
     }
@@ -293,6 +458,20 @@ export function TriagePage() {
                     >
                       {message.text}
                     </div>
+                    {message.result?.status === 'awaiting_safety_check' &&
+                      message.result.safety_questions && (
+                        <SafetyCheck
+                          questions={message.result.safety_questions}
+                          disabled={
+                            busy ||
+                            active?.thread_id !== message.result.thread_id ||
+                            active?.status !== 'awaiting_safety_check'
+                          }
+                          onSubmit={(answers) =>
+                            void answerSafety(message.result!, answers)
+                          }
+                        />
+                      )}
                     {message.result?.candidates && (
                       <div className="mt-4 space-y-2.5">
                         {message.result.candidates.map((candidate) => (

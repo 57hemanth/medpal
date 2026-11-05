@@ -33,6 +33,12 @@ async def test_book_flow(client):
     r = await client.post("/triage", json={"text": "knee pain for a week"}, headers=ASHA)
     assert r.status_code == 200
     body = r.json()
+    assert body["status"] == "awaiting_safety_check"
+    answers = {q["key"]: False for q in body["safety_questions"]}
+    r = await client.post(
+        f"/triage/{body['thread_id']}/resume", json={"safety_answers": answers}, headers=ASHA
+    )
+    body = r.json()
     assert body["status"] == "awaiting_choice"
     assert len(body["candidates"]) == 2
 
@@ -95,3 +101,14 @@ async def test_health_endpoint_is_not_shadowed_by_spa(monkeypatch, tmp_path):
         page = await client.get("/", headers={"accept": "text/html"})
         assert page.status_code == 200
         assert "MedPal" in page.text
+
+
+async def test_safety_screen_yes_is_an_emergency(client):
+    r = await client.post("/triage", json={"text": "my father is not well"}, headers=ASHA)
+    body = r.json()
+    answers = {q["key"]: q["key"] == "breathing" for q in body["safety_questions"]}
+    r = await client.post(
+        f"/triage/{body['thread_id']}/resume", json={"safety_answers": answers}, headers=ASHA
+    )
+    assert r.json()["status"] == "emergency"
+    assert r.json()["handoff_ticket_id"]

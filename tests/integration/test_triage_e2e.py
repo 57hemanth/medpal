@@ -61,10 +61,16 @@ async def test_book_across_two_app_instances(gm_world, admin_url):
     r = await _client_call("/triage", {"text": "mild fever and body ache"}, headers)
     assert r.status_code == 200, r.text
     body = r.json()
+    assert body["status"] == "awaiting_safety_check"
+    answers = {q["key"]: False for q in body["safety_questions"]}
+
+    # Each step runs on a brand-new app instance: state must come from the Postgres checkpointer.
+    r = await _client_call(f"/triage/{body['thread_id']}/resume", {"safety_answers": answers}, headers)
+    assert r.status_code == 200, r.text
+    body = r.json()
     assert body["status"] == "awaiting_choice"
     assert gm_world["slot"] in [c["slot_id"] for c in body["candidates"]]
 
-    # Resume on a brand-new app instance: state must come from the Postgres checkpointer.
     key = f"key-{uuid.uuid4()}"
     r = await _client_call(
         f"/triage/{body['thread_id']}/resume", {"slot_id": gm_world["slot"], "idempotency_key": key}, headers

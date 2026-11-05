@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { render, screen, waitFor } from '@testing-library/react';
+import { render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { MemoryRouter } from 'react-router-dom';
 import { expect, test, vi } from 'vitest';
@@ -73,4 +73,60 @@ test('keeps a booking retry idempotent and disables completed appointment choice
   );
   expect(requests).toHaveLength(2);
   expect(requests[0].idempotency_key).toBe(requests[1].idempotency_key);
+});
+
+test('safety screen requires every answer and a yes leads to the emergency path', async () => {
+  const resumed: { safety_answers?: Record<string, boolean> }[] = [];
+  vi.mocked(api).mockImplementation(async (path, options) => {
+    if (path === '/api/appointments') return [];
+    if (path === '/triage')
+      return {
+        thread_id: 'safety-thread',
+        status: 'awaiting_safety_check',
+        reply: 'Before we book, please answer a few quick safety questions.',
+        safety_questions: [
+          { key: 'chest_pain', question: 'Chest pain right now?' },
+          { key: 'breathing', question: 'Trouble breathing?' },
+        ],
+      };
+    if (path.endsWith('/resume')) {
+      resumed.push(JSON.parse(String(options?.body)));
+      return {
+        thread_id: 'safety-thread',
+        status: 'emergency',
+        reply: 'These symptoms need urgent attention now.',
+      };
+    }
+    throw new Error('Unexpected endpoint');
+  });
+  render(
+    <QueryClientProvider
+      client={
+        new QueryClient({ defaultOptions: { queries: { retry: false } } })
+      }
+    >
+      <MemoryRouter>
+        <TriagePage />
+      </MemoryRouter>
+    </QueryClientProvider>,
+  );
+  const user = userEvent.setup();
+  await user.click(
+    screen.getByRole('button', { name: 'I’ve had knee pain for a week' }),
+  );
+  const form = await screen.findByRole('form', { name: 'Safety questions' });
+  const submit = within(form).getByRole('button', { name: /continue/i });
+  expect(submit).toBeDisabled();
+  const radios = within(form).getAllByRole('radio');
+  await user.click(radios[2]); // breathing: Yes
+  expect(submit).toBeDisabled(); // chest pain still unanswered
+  await user.click(radios[1]); // chest pain: No
+  expect(submit).toBeEnabled();
+  await user.click(submit);
+  expect(
+    await screen.findByText('These symptoms need urgent attention now.'),
+  ).toBeInTheDocument();
+  expect(resumed).toEqual([
+    { safety_answers: { breathing: true, chest_pain: false } },
+  ]);
 });

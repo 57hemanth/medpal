@@ -20,6 +20,9 @@ class TriageState(TypedDict, total=False):
     auth: AuthContext
     intake_text: str
     red_flags: list[str]
+    safety_answers: dict[str, bool] | None
+    clarify_count: int
+    clarified: bool
     ruleset_version: str
     ruleset_status: str
     specialty: str | None
