@@ -1,5 +1,6 @@
 """Runtime settings. Values come from environment variables or a local .env (never committed)."""
 
+from datetime import date
 from functools import lru_cache
 from typing import Literal
 
@@ -34,8 +35,37 @@ class Settings(BaseSettings):
     chat_api_key: str | None = None
     chat_base_url: str | None = None
     chat_temperature: float = 0.0
+    # Model routing: a smaller model for classification-style steps (defaults to the primary model).
+    chat_small_model: str | None = None
+    # Fallback provider, tried when the primary fails or returns invalid output.
+    chat_fallback_provider: Literal["fake", "gemini", "openai", "anthropic", "openai-compatible"] | None = (
+        None
+    )
+    chat_fallback_model: str | None = None
+    chat_fallback_api_key: str | None = None
+    chat_fallback_base_url: str | None = None
 
     speech_model_path: str | None = None
+
+    # Cost metering: price per million tokens by model id, e.g.
+    # MEDPAL_MODEL_PRICES='{"gemini-2.5-flash": {"in": 0.30, "out": 2.50}}'. Never hard-coded in the code;
+    # always stamped with the date the price list was read. Unpriced models report cost as NULL.
+    model_prices: dict[str, dict[str, float]] = {}
+    price_list_date: date | None = None
+    price_currency: str = "USD"
+
+    # Records ingest: "inline" runs in the upload request (local dev, tests); "queue" hands the document
+    # id to the arq worker. Only the id goes to Redis, never document content.
+    ingest_mode: Literal["inline", "queue"] = "inline"
+    ingest_max_concurrency: int = 4  # pages processed in parallel per document
+    redis_url: str = "redis://localhost:6380"
+
+    # Pharmacy stock feed for the worker's scheduled sync: "none" (stock loaded by the seed),
+    # "csv" (nightly file) or "api" (real-time pharmacy API). Same interface either way.
+    pharmacy_feed: Literal["none", "csv", "api"] = "none"
+    pharmacy_feed_path: str | None = None
+    pharmacy_api_url: str | None = None
+    pharmacy_api_token: str | None = None
 
     object_store_backend: Literal["file", "s3", "memory"] = "file"
     object_store_directory: str = ".medpal/objects"
@@ -49,6 +79,8 @@ class Settings(BaseSettings):
     def _no_dev_auth_in_prod(self) -> "Settings":
         if self.env == "prod" and self.auth_mode == "dev":
             raise ValueError("auth_mode=dev is not allowed when env=prod")
+        if self.chat_fallback_provider and not self.chat_fallback_model:
+            raise ValueError("chat_fallback_model is required when chat_fallback_provider is set")
         if self.env == "prod" and self.chat_provider == "fake":
             raise ValueError("chat_provider=fake is not allowed when env=prod")
         if self.env == "prod" and self.object_store_backend != "s3":
