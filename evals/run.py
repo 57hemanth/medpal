@@ -61,6 +61,9 @@ class Report:
     over_refusal: float = 0.0
     doctor_review_holdout_recall: float = 0.0
     doctor_review_holdout_over_refusal: float = 0.0
+    specialty_holdout_right: float = 0.0
+    specialty_holdout_wrong: float = 0.0
+    specialty_holdout_unsure: float = 0.0
     failures: list[dict[str, object]] = field(default_factory=list)
     gates: dict[str, bool] = field(default_factory=dict)
 
@@ -138,6 +141,21 @@ def run() -> Report:
         ]
         return recall, over, wrong
 
+    # Specialty on phrasings the rules were never tuned on: reported, not gated. With a model configured,
+    # the model answers when the rules are unsure; `make live-check` measures that combination.
+    unseen = _load("triage_specialty_holdout.jsonl")
+    matches = [(match_specialty(str(c["text"])), c["expect"]) for c in unseen]
+    n = len(unseen) or 1
+    report.specialty_holdout_unsure = round(sum(m.needs_clarification for m, _ in matches) / n, 4)
+    report.specialty_holdout_right = round(
+        sum(not m.needs_clarification and m.specialty in e for m, e in matches) / n,
+        4,  # type: ignore[operator]
+    )
+    report.specialty_holdout_wrong = round(
+        sum(not m.needs_clarification and m.specialty not in e for m, e in matches) / n,
+        4,  # type: ignore[operator]
+    )
+
     review = _load("records_doctor_review.jsonl")
     report.doctor_review_cases = len(review)
     report.doctor_review_recall, report.over_refusal, wrong = score(review)
@@ -173,6 +191,12 @@ def main() -> None:
         f"held-out (rules only, not a gate): recall {report.holdout_recall_rules_only:.0%}, "
         f"over-triage {report.holdout_over_triage:.0%}  ({report.holdout_cases} cases); "
         "the structured safety screen covers what the rules miss"
+    )
+    print(
+        "  specialty, unseen phrasings (rules only, not a gate): "
+        f"right {report.specialty_holdout_right:.0%}, "
+        f"wrong {report.specialty_holdout_wrong:.0%}, asks a question {report.specialty_holdout_unsure:.0%}; "
+        "the model answers when the rules are unsure (make live-check)"
     )
     print(
         f"records doctor-review recall {report.doctor_review_recall:.0%}, over-refusal "

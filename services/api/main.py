@@ -14,6 +14,7 @@ from langgraph.checkpoint.postgres.aio import AsyncPostgresSaver
 
 from services.agent.scribe.graph import build_scribe_graph
 from services.agent.scribe.tools import PgScribeTools
+from services.agent.triage.assessor import ModelAssessor
 from services.agent.triage.graph import build_triage_graph
 from services.agent.triage.tools import PgTriageTools
 from services.api.routers import assistant, consent, me, ops, records, scribe, triage
@@ -46,7 +47,14 @@ async def _postgres_lifespan(app: FastAPI) -> AsyncIterator[None]:
         app.state.speech_transcriber = LocalSpeechTranscriber(settings.speech_model_path)
         routes = build_model_routes(settings)
         app.state.chat_client = EgressChatClient(routes["large"], routes=routes)
-        app.state.triage_graph = build_triage_graph(PgTriageTools(pool)).compile(checkpointer=saver)
+        # The model steps join triage only when a real provider is configured; the local placeholder
+        # model would add nothing, so development and tests stay rules-only and deterministic.
+        assessor = (
+            ModelAssessor(app.state.chat_client, deadline_seconds=settings.triage_model_deadline_seconds)
+            if settings.chat_provider != "fake"
+            else None
+        )
+        app.state.triage_graph = build_triage_graph(PgTriageTools(pool), assessor).compile(checkpointer=saver)
         app.state.scribe_graph = build_scribe_graph(PgScribeTools(pool, app.state.chat_client)).compile(
             checkpointer=saver
         )

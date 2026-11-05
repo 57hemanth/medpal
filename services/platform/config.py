@@ -47,6 +47,9 @@ class Settings(BaseSettings):
     # Which tier answers records questions: "large" (default) or "small" when latency matters more.
     # Decide with `make live-check` (quality) and `make load-test` (p95) on your own models.
     records_model_tier: Literal["small", "large"] = "large"
+    # Triage's model check (red-flag second pass + specialty guess) waits at most this long; past it,
+    # triage continues on the rules and the patient's explicit safety answers.
+    triage_model_deadline_seconds: float = 4.0
     chat_small_thinking_level: Literal["low", "medium", "high"] | None = None
     # Fallback provider, tried when the primary fails or returns invalid output.
     chat_fallback_provider: Literal["fake", "gemini", "openai", "anthropic", "openai-compatible"] | None = (

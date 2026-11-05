@@ -45,6 +45,7 @@ interface TriageOut {
   safety_questions?: SafetyQuestion[];
   booking_id?: string;
   specialty?: string;
+  alternative_specialty?: string | null;
 }
 interface Citation {
   page: number;
@@ -86,7 +87,12 @@ const prompts = [
 
 function describe(result: TriageOut): string {
   if (result.status === 'awaiting_choice')
-    return `I found ${result.candidates?.length ?? 0} available options${result.specialty ? ` in ${result.specialty.toLowerCase()}` : ''}. Choose the appointment that works best for you.`;
+    return (
+      `I found ${result.candidates?.length ?? 0} available options${result.specialty ? ` in ${result.specialty.toLowerCase()}` : ''}. Choose the appointment that works best for you.` +
+      (result.alternative_specialty
+        ? ` ${result.alternative_specialty} could also help; the front desk can book that instead.`
+        : '')
+    );
   if (result.status === 'awaiting_safety_check')
     return (
       result.reply ??

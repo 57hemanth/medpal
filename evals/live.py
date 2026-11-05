@@ -298,7 +298,102 @@ async def check_fallback() -> None:
     )
 
 
-# ---- 5. metering -----------------------------------------------------------------------------------
+# ---- 5. triage model steps (in-process, the real model) ------------------------------------------------
+
+
+def _load_set(name: str) -> list[dict[str, Any]]:
+    path = Path(__file__).parent / "sets" / name
+    return [json.loads(line) for line in path.read_text().splitlines() if line.strip()]
+
+
+RED_FLAG_HOLDOUT = _load_set("triage_red_flags_holdout2.jsonl")
+SPECIALTY_HOLDOUT = _load_set("triage_specialty_holdout.jsonl")
+summary: list[str] = []
+
+
+def _assessor() -> Any:
+    from services.agent.triage.assessor import ModelAssessor
+    from services.platform.config import get_settings
+    from services.platform.egress.client import EgressChatClient
+    from services.platform.egress.providers import build_model_routes
+
+    settings = get_settings()
+    routes = build_model_routes(settings)
+    return ModelAssessor(
+        EgressChatClient(routes["large"], routes=routes),
+        # In the product the check starts at triage start and runs while the patient answers the safety
+        # questions, so it has their reading time plus the deadline. This measures what the model catches
+        # in that budget; the load test measures the latency.
+        deadline_seconds=settings.triage_model_deadline_seconds + 10,
+    )
+
+
+async def check_red_flag_second_pass() -> None:
+    """Held-out emergencies: the rules alone catch few; rules + the model's second pass must catch all."""
+    from services.agent.triage.rules import match_red_flags
+
+    assessor = _assessor()
+    pos = neg = caught_rules = caught_both = false_alarms = skipped = 0
+    for case in RED_FLAG_HOLDOUT:
+        start = time.perf_counter()
+        rules = match_red_flags(case["text"])
+        assessed = None if rules else await assessor.assess(case["text"])
+        model = assessed.red_flags if assessed else []
+        skipped += bool(assessed and assessed.skipped)
+        flagged = bool(rules or model)
+        if case["expect_red_flag"]:
+            pos += 1
+            caught_rules += bool(rules)
+            caught_both += flagged
+            ok, detail = flagged, f"missed; model={model}"
+        else:
+            neg += 1
+            false_alarms += flagged
+            ok, detail = not flagged, f"false alarm: rules={rules} model={model}"
+        record("red flags (held-out)", case["text"][:60], ok, detail, time.perf_counter() - start)
+    summary.append(
+        f"Red flags on unseen phrasings: rules alone caught {caught_rules}/{pos}; rules + model caught "
+        f"{caught_both}/{pos}; false alarms {false_alarms}/{neg}; model check skipped at the deadline "
+        f"{skipped} times (the safety questions are asked before it)."
+    )
+
+
+async def check_specialty_with_model() -> None:
+    """Unseen phrasings: rules first; the model only where the rules are unsure, as the graph does."""
+    from services.agent.triage.assessor import SPECIALTY_CONFIDENCE_MIN
+    from services.agent.triage.rules import match_specialty
+
+    assessor = _assessor()
+    rules_right = right = wrong = asks = 0
+    for case in SPECIALTY_HOLDOUT:
+        start = time.perf_counter()
+        match = match_specialty(case["text"])
+        chosen, source = (None, "rules")
+        if not match.needs_clarification:
+            chosen = match.specialty
+            rules_right += chosen in case["expect"]
+        else:
+            guess = (await assessor.assess(case["text"])).specialty
+            if guess and guess.confidence >= SPECIALTY_CONFIDENCE_MIN:
+                chosen, source = guess.specialty, f"model {guess.confidence:.2f}"
+        if chosen is None:
+            asks += 1
+            ok, detail = True, "asks a clarifying question"  # safe, not wrong
+        else:
+            ok = chosen in case["expect"]
+            right += ok
+            wrong += not ok
+            detail = f"chose {chosen} ({source}); expected {case['expect']}"
+        record("specialty (unseen)", case["text"][:60], ok, detail, time.perf_counter() - start)
+    n = len(SPECIALTY_HOLDOUT)
+    summary.append(
+        f"Specialty on unseen phrasings: rules alone right {rules_right}/{n}; "
+        f"rules + model right {right}/{n}, "
+        f"wrong {wrong}/{n}, asked a question {asks}/{n}."
+    )
+
+
+# ---- 6. metering -----------------------------------------------------------------------------------
 
 
 async def check_metering(client: httpx.AsyncClient) -> None:
@@ -321,6 +416,8 @@ async def main() -> None:
         await check_routing(client)
         await check_scribe(client)
         await check_fallback()
+        await check_red_flag_second_pass()
+        await check_specialty_with_model()
         await check_metering(client)
 
     passed = sum(r.passed for r in results)
@@ -328,6 +425,8 @@ async def main() -> None:
         f"# Live model check ({datetime.now(UTC):%Y-%m-%d %H:%M} UTC)",
         "",
         f"**{passed}/{len(results)} passed** against {args.base}.",
+        "",
+        *[f"- {line}" for line in summary],
         "",
         "| Area | Case | Result | Seconds | Detail |",
         "|---|---|---|---|---|",
@@ -341,6 +440,8 @@ async def main() -> None:
     out = Path("evals/runs") / f"live-{datetime.now(UTC):%Y%m%dT%H%M%SZ}.md"
     out.parent.mkdir(exist_ok=True)
     out.write_text("\n".join(lines))
+    for line in summary:
+        print(line)
     print(f"\n{passed}/{len(results)} passed; written to {out}")
     raise SystemExit(0 if passed == len(results) else 1)
 

@@ -1,0 +1,30 @@
+{"id": "sho-001", "text": "my 4 year old has had a runny nose and is very cranky", "expect": ["Paediatrics"]}
+{"id": "sho-002", "text": "periods have been very irregular for six months", "expect": ["Obstetrics and Gynaecology"]}
+{"id": "sho-003", "text": "my heart races and skips beats when I climb stairs", "expect": ["Cardiology"]}
+{"id": "sho-004", "text": "white patches on my skin that are slowly spreading", "expect": ["Dermatology"]}
+{"id": "sho-005", "text": "constant ringing and a blocked feeling in my left ear", "expect": ["ENT"]}
+{"id": "sho-006", "text": "things look blurry when I read and my eyes water", "expect": ["Ophthalmology"]}
+{"id": "sho-007", "text": "a lump in my groin that bulges when I cough", "expect": ["General Surgery"]}
+{"id": "sho-008", "text": "always thirsty and getting up to pee every night", "expect": ["Endocrinology", "General Medicine"]}
+{"id": "sho-009", "text": "bloating and loose motions after most meals for a month", "expect": ["Gastroenterology"]}
+{"id": "sho-010", "text": "wheezing every winter and I get short of breath when I run", "expect": ["Pulmonology", "Allergy and Immunology"]}
+{"id": "sho-011", "text": "tingling and numbness in both feet for months", "expect": ["Neurology", "Endocrinology"]}
+{"id": "sho-012", "text": "feeling low and not enjoying anything for weeks", "expect": ["Psychiatry", "Clinical Psychology"]}
+{"id": "sho-013", "text": "swelling in my ankles and foamy urine", "expect": ["Nephrology"]}
+{"id": "sho-014", "text": "burning when passing urine and going very often", "expect": ["Urology", "General Medicine"]}
+{"id": "sho-015", "text": "sharp toothache when I drink something cold", "expect": ["Dentistry"]}
+{"id": "sho-016", "text": "my shoulder is stiff after the fracture healed and I need exercises", "expect": ["Physiotherapy", "Orthopaedics"]}
+{"id": "sho-017", "text": "morning stiffness in my finger joints that lasts an hour", "expect": ["Rheumatology"]}
+{"id": "sho-018", "text": "I bruise very easily and my haemoglobin was low", "expect": ["Haematology"]}
+{"id": "sho-019", "text": "my baby was born three weeks early and is not feeding well", "expect": ["Neonatology", "Paediatrics"]}
+{"id": "sho-020", "text": "my 80 year old father keeps forgetting things", "expect": ["Geriatric Medicine", "Neurology"]}
+{"id": "sho-021", "text": "sneezing and itchy eyes every spring", "expect": ["Allergy and Immunology", "ENT"]}
+{"id": "sho-022", "text": "yellow eyes and dark urine for a week", "expect": ["Hepatology", "Gastroenterology"]}
+{"id": "sho-023", "text": "I snore loudly and I'm sleepy all day", "expect": ["Sleep Medicine", "Pulmonology", "ENT"]}
+{"id": "sho-024", "text": "twisted my knee playing football and it's swollen", "expect": ["Sports Medicine", "Orthopaedics"]}
+{"id": "sho-025", "text": "I want a diet plan to manage my weight and cholesterol", "expect": ["Nutrition and Dietetics"]}
+{"id": "sho-026", "text": "panic attacks before exams, I'd like to talk to someone", "expect": ["Clinical Psychology", "Psychiatry"]}
+{"id": "sho-027", "text": "varicose veins on my legs that ache by evening", "expect": ["Vascular Surgery"]}
+{"id": "sho-028", "text": "pain in my heel every morning when I step out of bed", "expect": ["Orthopaedics", "Sports Medicine", "Physiotherapy"]}
+{"id": "sho-029", "text": "my son's eyes don't look in the same direction", "expect": ["Ophthalmology", "Paediatrics"]}
+{"id": "sho-030", "text": "mere ghutne mein sujan hai aur seedhi chadhne mein dikkat", "expect": ["Orthopaedics"]}

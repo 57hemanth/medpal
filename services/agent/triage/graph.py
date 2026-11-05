@@ -6,7 +6,12 @@
           safety_screen  (interrupt: patient answers 7 yes/no red-flag questions) ─any yes─► emergency
                  │ all no
                  ▼
-          match_specialty ─unclear─► ask_clarifying (interrupt: one question) → back to red_flag_rules
+          model_check  (one bounded model call: red-flag second pass that may only ADD flags,
+                 │      plus a specialty guess; slow or down → rules and safety answers alone)
+                 │ ─flag─► emergency_handoff
+                 ▼
+          match_specialty  (rules; the model's guess only when the rules are unsure, confidence >= 0.6)
+                 │ ─unclear─► ask_clarifying (interrupt: one question) → back to red_flag_rules
                  │                    (still unclear after one answer → front_desk_handoff)
                  ▼
           shortlist ─none─► front_desk_handoff ─► END
@@ -30,6 +35,7 @@ from langgraph.types import interrupt
 
 from services.platform.auth import AuthContext
 
+from .assessor import SPECIALTY_CONFIDENCE_MIN, TriageAssessor
 from .rules import RULESET_STATUS, RULESET_VERSION, SAFETY_SCREEN, match_red_flags, screen_red_flags
 from .rules import match_specialty as classify_specialty
 from .state import CandidateView, TriageState
@@ -71,10 +77,17 @@ def _thread_id(config: RunnableConfig) -> str:
     return str(config["configurable"]["thread_id"])
 
 
-def build_triage_graph(tools: TriageTools) -> StateGraph:
-    async def intake(state: TriageState) -> TriageState:
+def build_triage_graph(tools: TriageTools, assessor: TriageAssessor | None = None) -> StateGraph:
+    """`assessor` adds the model steps (red-flag second pass, specialty when rules are unsure).
+    Without it, triage is rules only: the behaviour every test without a model relies on."""
+
+    async def intake(state: TriageState, config: RunnableConfig) -> TriageState:
+        text = state["intake_text"].strip()
+        if assessor is not None and not match_red_flags(text):
+            # Start the model check now; the patient answers the safety questions while it runs.
+            assessor.prefetch(_thread_id(config), text)
         return {
-            "intake_text": state["intake_text"].strip(),
+            "intake_text": text,
             "red_flags": [],
             "ruleset_version": RULESET_VERSION,
             "ruleset_status": RULESET_STATUS,
@@ -84,6 +97,27 @@ def build_triage_graph(tools: TriageTools) -> StateGraph:
 
     async def red_flag_rules(state: TriageState) -> TriageState:
         return {"red_flags": match_red_flags(state["intake_text"])}
+
+    async def model_check(state: TriageState, config: RunnableConfig) -> TriageState:
+        # Only reached when the rules and the safety answers found nothing. It can add flags, never
+        # remove them; its specialty guess is used only if the rules turn out to be unsure.
+        if assessor is None:
+            return {"model_guess": None}
+        result = await assessor.assess(state["intake_text"], key=_thread_id(config))
+        guess = result.specialty
+        return {
+            "red_flags": [f"{flag}:model" for flag in result.red_flags],
+            "model_guess": (
+                {
+                    "specialty": guess.specialty,
+                    "alternative": guess.alternative,
+                    "confidence": guess.confidence,
+                }
+                if guess
+                else None
+            ),
+            "model_skipped": result.skipped,
+        }
 
     async def safety_screen(state: TriageState) -> TriageState:
         # Pure: this node re-runs on resume, so no side effects here.
@@ -107,8 +141,18 @@ def build_triage_graph(tools: TriageTools) -> StateGraph:
 
     async def match_specialty(state: TriageState) -> TriageState:
         match = classify_specialty(state["intake_text"])
+        guess = state.get("model_guess")
+        if match.needs_clarification and guess and guess["confidence"] >= SPECIALTY_CONFIDENCE_MIN:
+            return {
+                "specialty": guess["specialty"],
+                "alternative_specialty": guess["alternative"],
+                "confidence": guess["confidence"],
+                "specialty_rule_id": "model",
+                "needs_clarification": False,
+            }
         return {
             "specialty": match.specialty,
+            "alternative_specialty": None,
             "confidence": match.confidence,
             "specialty_rule_id": match.rule_id,
             "needs_clarification": match.needs_clarification,
@@ -188,8 +232,11 @@ def build_triage_graph(tools: TriageTools) -> StateGraph:
     def after_rules(state: TriageState) -> str:
         if state["red_flags"]:
             return "emergency_handoff"
-        # The safety screen is asked once per run; a clarification re-runs the rules but not the screen.
-        return "match_specialty" if state.get("safety_answers") is not None else "safety_screen"
+        # The safety screen is asked once per run; after a clarification the new text is checked again.
+        return "model_check" if state.get("safety_answers") is not None else "safety_screen"
+
+    def after_model_check(state: TriageState) -> str:
+        return "emergency_handoff" if state["red_flags"] else "match_specialty"
 
     def after_specialty(state: TriageState) -> str:
         if not state.get("needs_clarification"):
@@ -204,7 +251,7 @@ def build_triage_graph(tools: TriageTools) -> StateGraph:
     def after_screen(state: TriageState) -> str:
         if state.get("safety_answers") is None:
             return "safety_screen"
-        return "emergency_handoff" if state["red_flags"] else "match_specialty"
+        return "emergency_handoff" if state["red_flags"] else "model_check"
 
     def after_shortlist(state: TriageState) -> str:
         return "present_options" if state["candidates"] else "front_desk_handoff"
@@ -220,6 +267,7 @@ def build_triage_graph(tools: TriageTools) -> StateGraph:
     g = StateGraph(TriageState)
     g.add_node("intake", intake)
     g.add_node("red_flag_rules", red_flag_rules)
+    g.add_node("model_check", model_check)
     g.add_node("safety_screen", safety_screen)
     g.add_node("emergency_handoff", emergency_handoff)
     g.add_node("match_specialty", match_specialty)
@@ -233,11 +281,12 @@ def build_triage_graph(tools: TriageTools) -> StateGraph:
     g.add_edge(START, "intake")
     g.add_edge("intake", "red_flag_rules")
     g.add_conditional_edges(
-        "red_flag_rules", after_rules, ["emergency_handoff", "safety_screen", "match_specialty"]
+        "red_flag_rules", after_rules, ["emergency_handoff", "safety_screen", "model_check"]
     )
     g.add_conditional_edges(
-        "safety_screen", after_screen, ["safety_screen", "emergency_handoff", "match_specialty"]
+        "safety_screen", after_screen, ["safety_screen", "emergency_handoff", "model_check"]
     )
+    g.add_conditional_edges("model_check", after_model_check, ["emergency_handoff", "match_specialty"])
     g.add_conditional_edges(
         "match_specialty", after_specialty, ["shortlist", "ask_clarifying", "front_desk_handoff"]
     )

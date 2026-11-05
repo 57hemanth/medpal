@@ -50,6 +50,8 @@ class TriageOut(BaseModel):
     ruleset_version: str | None = None
     ruleset_status: str | None = None
     specialty: str | None = None
+    alternative_specialty: str | None = None  # also suitable; shown, never booked automatically
+    specialty_source: Literal["rules", "model"] | None = None
     confidence: float | None = None
 
 
@@ -81,6 +83,8 @@ def _to_out(thread_id: str, out: dict[str, Any]) -> TriageOut:
             ruleset_version=out.get("ruleset_version"),
             ruleset_status=out.get("ruleset_status"),
             specialty=out.get("specialty"),
+            alternative_specialty=out.get("alternative_specialty"),
+            specialty_source="model" if out.get("specialty_rule_id") == "model" else "rules",
             confidence=out.get("confidence"),
         )
     return TriageOut(

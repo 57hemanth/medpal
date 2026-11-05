@@ -11,47 +11,9 @@ appear in an answer, so nothing can be invented.
 import re
 from dataclasses import dataclass
 
-# What each specialty looks after, in plain words. A fixed, reviewable table: descriptive, never advice.
-SPECIALTY_ABOUT: dict[str, str] = {
-    "General Medicine": "common illnesses in adults, and the first doctor to see when you're unsure",
-    "Paediatrics": "the health of babies, children and teenagers",
-    "Obstetrics and Gynaecology": "pregnancy, childbirth and women's reproductive health",
-    "Orthopaedics": "bones, joints, muscles and injuries to them",
-    "Cardiology": "the heart and blood pressure",
-    "Dermatology": "skin, hair and nails",
-    "ENT": "the ear, nose and throat",
-    "Ophthalmology": "the eyes and vision",
-    "General Surgery": "operations on the abdomen, hernias and other common surgical problems",
-    "Endocrinology": "hormones, including diabetes and thyroid conditions",
-    "Gastroenterology": "the stomach, intestines and digestion",
-    "Pulmonology": "the lungs and breathing",
-    "Neurology": "the brain, nerves and conditions such as headaches and seizures",
-    "Psychiatry": "mental health, including mood, anxiety and sleep problems",
-    "Nephrology": "the kidneys",
-    "Urology": "the urinary tract and the male reproductive system",
-    "Dentistry": "teeth and gums",
-    "Physiotherapy": "movement, exercise-based recovery and rehabilitation",
-    "Rheumatology": "arthritis and other joint and autoimmune conditions",
-    "Medical Oncology": "cancer treatment with medicines",
-    "Surgical Oncology": "cancer treatment with surgery",
-    "Haematology": "the blood",
-    "Infectious Diseases": "infections that are severe, unusual or hard to treat",
-    "Neurosurgery": "surgery on the brain, spine and nerves",
-    "Cardiothoracic Surgery": "surgery on the heart and chest",
-    "Plastic Surgery": "reconstructive surgery, including after injuries and burns",
-    "Vascular Surgery": "surgery on the arteries and veins",
-    "Paediatric Surgery": "surgery for babies and children",
-    "Neonatology": "newborn babies, especially those born early or unwell",
-    "Geriatric Medicine": "the health of older adults",
-    "Allergy and Immunology": "allergies and the immune system",
-    "Hepatology": "the liver",
-    "Pain Medicine": "long-lasting pain",
-    "Sleep Medicine": "sleep problems",
-    "Sports Medicine": "sports injuries and staying active safely",
-    "Nutrition and Dietetics": "food, diet and nutrition",
-    "Clinical Psychology": "talking therapies for emotional and mental health",
-    "Bariatric Surgery": "weight-loss surgery",
-}
+from services.agent.triage.specialties import SPECIALTY_ABOUT
+
+__all__ = ["SPECIALTY_ABOUT", "VisitFacts", "answer_visit", "asked_for"]
 
 
 @dataclass(frozen=True)

@@ -1,5 +1,5 @@
 import operator
-from typing import Annotated, Literal, TypedDict
+from typing import Annotated, Any, Literal, TypedDict
 
 from services.platform.auth import AuthContext
 
@@ -26,6 +26,12 @@ class TriageState(TypedDict, total=False):
     ruleset_version: str
     ruleset_status: str
     specialty: str | None
+    # The model's second choice: shown to the patient, never booked automatically.
+    alternative_specialty: str | None
+    # The model's specialty guess from model_check, used only when the specialty rules are unsure.
+    model_guess: dict[str, Any] | None
+    # "timeout" or "unavailable" when the model added nothing on this pass.
+    model_skipped: str | None
     confidence: float | None
     specialty_rule_id: str | None
     needs_clarification: bool

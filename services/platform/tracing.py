@@ -14,9 +14,9 @@
 import contextlib
 import logging
 import time
-from collections.abc import AsyncIterator, Mapping
+from collections.abc import AsyncIterator, Iterator, Mapping
 from contextvars import ContextVar
-from dataclasses import astuple, dataclass, field
+from dataclasses import astuple, dataclass, field, replace
 from datetime import UTC, date, datetime
 from typing import Any, Protocol
 from uuid import UUID
@@ -134,6 +134,44 @@ def record_model_call(
             run.prices.list_date,
         )
     )
+
+
+@contextlib.contextmanager
+def capture_model_calls() -> Iterator[list[Span]]:
+    """Collect model spans here instead of the current run's trace.
+
+    For work that outlives the request that started it (a background prefetch): its spans are replayed
+    into whichever run consumes the result, so a call is metered once, by the request that used it.
+    """
+    outer = _current.get()
+    run = _Run("", "", outer.prices if outer else Prices())
+    token = _current.set(run)
+    try:
+        yield run.spans
+    finally:
+        _current.reset(token)
+
+
+def replay_model_calls(spans: list[Span]) -> None:
+    """Add captured model spans to the current run, priced with its price list. A no-op outside a run."""
+    run = _current.get()
+    if run is None:
+        return
+    for span in spans:
+        cost = (
+            run.prices.cost(span.name, span.tokens_in or 0, span.tokens_out or 0)
+            if span.status == "ok"
+            else None
+        )
+        run.spans.append(
+            replace(
+                span,
+                trace_id=run.trace_id,
+                workflow=run.workflow,
+                cost=cost,
+                price_list_date=run.prices.list_date,
+            )
+        )
 
 
 class _NodeTimer(AsyncCallbackHandler):

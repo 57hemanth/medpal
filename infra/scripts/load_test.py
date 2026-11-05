@@ -50,6 +50,9 @@ MIXED = [
     "frequent headaches in the evening",
 ]
 MAX_ERROR_RATE = 0.01
+# Realistic pauses: answering the seven safety questions, then reading three appointment options.
+SAFETY_THINK_SECONDS = (6.0, 15.0)
+CHOICE_THINK_SECONDS = (3.0, 8.0)
 
 samples: dict[str, list[float]] = defaultdict(list)
 errors: dict[str, int] = defaultdict(int)
@@ -77,6 +80,8 @@ async def patient_journey(client: httpx.AsyncClient) -> None:
         return
     body = start.json()
     if body.get("status") == "awaiting_safety_check":
+        # People read and answer seven questions: the model check started at triage start runs meanwhile.
+        await asyncio.sleep(random.uniform(*SAFETY_THINK_SECONDS))
         answers = {q["key"]: False for q in body["safety_questions"]}
         r = await timed(
             "triage.safety",
@@ -88,6 +93,7 @@ async def patient_journey(client: httpx.AsyncClient) -> None:
             return
         body = r.json()
     if body.get("status") == "awaiting_choice" and body.get("candidates"):
+        await asyncio.sleep(random.uniform(*CHOICE_THINK_SECONDS))
         slot = body["candidates"][0]["slot_id"]
         await timed(
             "triage.book",

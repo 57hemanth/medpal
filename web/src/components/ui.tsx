@@ -418,7 +418,10 @@ export function describeReason(reason: string) {
       // "redflag_breathing:screen" = the patient answered yes on the safety questions.
       const [code, source] = part.trim().split(':');
       const label = REASONS[code] ?? code.replaceAll('_', ' ');
-      return source === 'screen' ? `${label} (from safety questions)` : label;
+      if (source === 'screen') return `${label} (from safety questions)`;
+      if (source === 'model')
+        return `${label} (flagged by the assistant's safety check)`;
+      return label;
     })
     .join(' · ');
 }
