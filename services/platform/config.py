@@ -44,6 +44,9 @@ class Settings(BaseSettings):
     # a safe "unavailable"). SDK retries stay low so one call can't stretch into minutes of backoff.
     chat_timeout_seconds: float = 30.0
     chat_max_retries: int = 1
+    # Which tier answers records questions: "large" (default) or "small" when latency matters more.
+    # Decide with `make live-check` (quality) and `make load-test` (p95) on your own models.
+    records_model_tier: Literal["small", "large"] = "large"
     chat_small_thinking_level: Literal["low", "medium", "high"] | None = None
     # Fallback provider, tried when the primary fails or returns invalid output.
     chat_fallback_provider: Literal["fake", "gemini", "openai", "anthropic", "openai-compatible"] | None = (

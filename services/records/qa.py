@@ -82,6 +82,7 @@ async def answer_question(
     question: str,
     patient_id: str | None = None,
     trace_id: str | None = None,
+    tier: str = "large",
 ) -> RecordsAnswer:
     if needs_doctor_review(question):
         return RecordsAnswer(
@@ -112,6 +113,7 @@ async def answer_question(
                 ),
                 user=_prompt(question, chunks),
                 purpose="records qa",
+                tier=tier,
             ),
             CitationAnswer,
         )

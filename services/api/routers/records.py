@@ -9,6 +9,7 @@ from pydantic import BaseModel
 from services.api.deps import auth_ctx
 from services.api.tracing import traced
 from services.platform.auth import AuthContext
+from services.platform.config import get_settings
 from services.records.ingest import MAX_UPLOAD_BYTES, UploadRejected
 from services.records.ingest_graph import job_id
 from services.records.qa import answer_question
@@ -110,6 +111,7 @@ async def question(body: QuestionIn, request: Request, auth: Auth) -> AnswerOut:
             question=body.question,
             patient_id=body.patient_id,
             trace_id=trace_id,
+            tier=get_settings().records_model_tier,
         )
     return AnswerOut(
         status=result.status,

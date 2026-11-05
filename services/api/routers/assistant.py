@@ -18,6 +18,7 @@ from services.api.routers.triage import _to_out
 from services.api.tracing import traced
 from services.platform import audit
 from services.platform.auth import AuthContext
+from services.platform.config import get_settings
 from services.platform.db import scoped
 from services.records.qa import answer_question
 
@@ -97,6 +98,7 @@ class AppSpecialists:
             question=question,
             patient_id=patient_id,
             trace_id=trace_id,
+            tier=get_settings().records_model_tier,
         )
         return {
             "status": result.status,
