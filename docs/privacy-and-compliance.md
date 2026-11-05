@@ -18,7 +18,7 @@ MedPal handles health data, so privacy is designed in, not added on. This page m
 | Scrubbing doesn't destroy clinical meaning | Over-scrub guards; dates and lab values kept; overlaps resolved by severity | `test_clinical_text_is_unchanged` | ✅ |
 | Embeddings don't become a hidden way out | In-boundary embedding adapter ([ADR-0007](adr/0007-exact-vector-search-per-patient.md)) | `test_local_embedding_shape_is_fixed_for_pgvector_schema` | 🟡 deterministic adapter; production model planned |
 | Traces and logs don't leak data | In-boundary spans with no text columns ([ADR-0011](adr/0011-in-boundary-tracing.md)); no request bodies in logs | `test_spans_never_contain_prompt_or_response_text`, `test_api_runs_are_traced_and_metrics_are_compliance_only` | ✅ |
-| A code bug can't send identified data out | Internal network with no route out; allowlisting egress proxy ([ADR-0008](adr/0008-hybrid-deployment-egress-boundary.md)) | `tests/unit/test_egress_proxy.py`, `make boundary-check` | 🟡 live check needs Docker |
+| A code bug can't send identified data out | Internal network with no route out; allowlisting egress proxy ([ADR-0008](adr/0008-hybrid-deployment-egress-boundary.md)) | `tests/unit/test_egress_proxy.py`, `make boundary-check` | ✅ |
 | Consultation audio (a voice is identifying) stays in-boundary | Local faster-whisper adapter; audio held in memory, never stored or sent to chat providers | `test_local_speech_uses_in_memory_audio`, `test_speech_rejects_invalid_audio_and_unconfigured_model` | 🟡 model provisioning and real audio evaluation external |
 
 ## 2. Identifiers with special restrictions

@@ -33,12 +33,12 @@ MedPal automates the routine parts and keeps humans in charge of every decision 
 | Triage → structured safety screen → clarifying question → shortlist → patient picks a slot → booking (pause/resume across app instances) | ✅ |
 | Emergency gate: red-flag rules plus a seven-question safety screen, with human handoff | ✅ evaluation-gated; clinician sign-off still external |
 | Records Q&A with verified citations; caregiver must pick one patient | ✅ |
-| Queued records ingest with pages processed in parallel (LangGraph `Send`, bounded) | ✅ code and tests; queue tests need Postgres + Redis |
+| Queued records ingest with pages processed in parallel (LangGraph `Send`, bounded) | ✅ |
 | Consultation scribe: doctor interrupt, edit history, redraft, stock-aware prescriptions, signing | ✅ |
 | Pharmacy stock feeds (nightly CSV or real-time API) synced every 15 minutes | ✅ |
 | MCP tool server: slots, booking, medicine stock | ✅ |
 | Model routing by tier with provider fallback; safe degradation when all fail | ✅ |
-| Hybrid deployment: internal network, ingress, allowlisting egress proxy | ✅ unit-tested; `make boundary-check` for the live proof |
+| Hybrid deployment: internal network, ingress, allowlisting egress proxy | ✅ proven live by `make boundary-check` |
 | Tracing on every run, cost per run, ops metrics, load test at 1,400 req/h | ✅ |
 | Evaluation sets with release gates, held-out generalisation set, calibrated LLM judge harness | ✅ judge needs clinician-reviewed labels |
 | Row-level security for every role, consent with expiry and revocation | ✅ |
@@ -47,7 +47,7 @@ MedPal automates the routine parts and keeps humans in charge of every decision 
 | React app for patients, doctors, front desk and consent | ✅ test-login identities; browser OIDC deferred |
 | Local speech-to-text | 🟡 adapter and upload UI; local model provisioning required |
 
-**Tests:** 200 unit · 64 data · 49 integration (real Postgres) · 4 frontend · evaluation gates · lint, type checks and module-boundary contracts. See [implementation status](docs/implementation-status.md) for what has been verified against a live stack.
+**Tests:** 202 unit · 64 data · 52 integration (real Postgres) · 4 frontend · evaluation gates · lint, type checks and module-boundary contracts. See [implementation status](docs/implementation-status.md) for what has been verified against a live stack.
 
 ## Quick start
 
